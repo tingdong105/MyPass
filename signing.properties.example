@@ -1,0 +1,6 @@
+# 移除后面的"example"后填写你自己的签名信息
+# 密钥路径相对于项目根目录
+storeFile=xxx/xxx.jks
+storePassword=123456
+keyAlias=key
+keyPassword=123456

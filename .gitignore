@@ -1,0 +1,26 @@
+*.iml
+.gradle
+/local.properties
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+
+# 本地签名配置与密钥
+/signing.properties
+*.jks
+*.keystore
+/key/
+
+# 本地代理配置
+/AGENTS.md
+/.agent/
+/.agents/
