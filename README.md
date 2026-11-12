@@ -10,13 +10,14 @@
 
 <p>
   <img src="https://img.shields.io/badge/开发阶段-Beta-orange?style=flat-square" alt="开发阶段：Beta" />
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue?style=flat-square" alt="开源协议：MIT" /></a>
   <img src="https://img.shields.io/badge/Kotlin-7F52FF?style=flat-square&logo=kotlin&logoColor=white" alt="Kotlin" />
   <img src="https://img.shields.io/badge/Jetpack_Compose-4285F4?style=flat-square&logo=jetpackcompose&logoColor=white" alt="Jetpack Compose" />
   <img src="https://img.shields.io/badge/Android-9.0%2B-3DDC84?style=flat-square&logo=android&logoColor=white" alt="Android 9.0 及以上" />
   <a href="../../releases"><img src="https://img.shields.io/badge/下载-Releases-2EA44F?style=flat-square&logo=github&logoColor=white" alt="前往 Releases 下载" /></a>
 </p>
 
-[项目简介](#项目简介) · [下载安装](#下载安装) · [开发计划](#开发计划) · [参与交流](#参与交流)
+[项目简介](#项目简介) · [下载安装](#下载安装) · [开发计划](#开发计划) · [参与交流](#参与交流) · [开源协议](#开源协议)
 
 </div>
 
@@ -55,3 +56,9 @@
 欢迎通过 [Issues](../../issues) 反馈问题、提出建议，或通过 Pull Request 参与完善项目。
 
 反馈问题时，请尽量附上应用版本、Android 版本和复现步骤，便于定位与修复。
+
+## 开源协议
+
+Copyright © 2026 Tingdong.
+
+本项目采用 [MIT 许可证](LICENSE)。使用、修改和分发本项目时，请遵守协议条款。
