@@ -86,12 +86,15 @@ dependencies {
     // 自带的一些Compose依赖
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)
-    implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.ui)
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+
+    // Miuix 主界面组件、主题与扩展图标
+    implementation(libs.miuix.ui)
+    implementation(libs.miuix.icons)
 
     // Compose 页面路由、回退栈与导航展示
     implementation(libs.androidx.navigation3.runtime)

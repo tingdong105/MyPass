@@ -10,6 +10,8 @@ activityCompose = "1.13.0"
 # https://kotlinlang.org/docs/serialization.html
 kotlin = "2.4.21"
 composeBom = "2026.09.00"
+# https://github.com/compose-miuix-ui/miuix
+miuix = "0.9.4"
 # https://developer.android.com/jetpack/androidx/releases/navigation3
 navigation3 = "1.2.1"
 # https://github.com/Kotlin/kotlinx.serialization
@@ -54,7 +56,8 @@ androidx-compose-ui-tooling = { group = "androidx.compose.ui", name = "ui-toolin
 androidx-compose-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
 androidx-compose-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-manifest" }
 androidx-compose-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4" }
-androidx-compose-material3 = { group = "androidx.compose.material3", name = "material3" }
+miuix-ui = { module = "top.yukonga.miuix.kmp:miuix-ui-android", version.ref = "miuix" }
+miuix-icons = { module = "top.yukonga.miuix.kmp:miuix-icons-android", version.ref = "miuix" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

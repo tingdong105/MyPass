@@ -1,6 +1,8 @@
 package com.winter.mypass.feature.home.view
 
 import android.content.res.Configuration
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -8,14 +10,20 @@ import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.union
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import com.winter.mypass.R
 import com.winter.mypass.ui.theme.MyPassTheme
+import top.yukonga.miuix.kmp.basic.Icon
+import top.yukonga.miuix.kmp.basic.Scaffold
+import top.yukonga.miuix.kmp.basic.SmallTopAppBar
+import top.yukonga.miuix.kmp.basic.Text
+import top.yukonga.miuix.kmp.icon.MiuixIcons
+import top.yukonga.miuix.kmp.icon.extended.Lock
+import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 /**
  * 首页问候内容，数据由路由入口传入。
@@ -26,12 +34,27 @@ import com.winter.mypass.ui.theme.MyPassTheme
 fun HomeScreen(name: String, modifier: Modifier = Modifier) {
     Scaffold(
         modifier = modifier.fillMaxSize(),
+        topBar = { SmallTopAppBar(title = stringResource(R.string.app_name)) },
         contentWindowInsets = WindowInsets.safeDrawing.union(WindowInsets.ime),
     ) { innerPadding ->
-        Text(
-            text = stringResource(R.string.home_greeting, name),
-            modifier = Modifier.padding(innerPadding).consumeWindowInsets(innerPadding),
-        )
+        Column(
+            modifier = Modifier
+                .padding(innerPadding)
+                .consumeWindowInsets(innerPadding)
+                .fillMaxSize(),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Icon(
+                imageVector = MiuixIcons.Lock,
+                contentDescription = null,
+                tint = MiuixTheme.colorScheme.primary,
+            )
+            Text(
+                text = stringResource(R.string.home_greeting, name),
+                style = MiuixTheme.textStyles.main,
+            )
+        }
     }
 }
 
