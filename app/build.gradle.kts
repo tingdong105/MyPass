@@ -5,6 +5,8 @@ import java.util.Properties
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
+    // KT序列化
+    alias(libs.plugins.kotlin.serialization)
 }
 
 // APP版本名称
@@ -82,6 +84,16 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+
+    // Compose 页面路由、回退栈与导航展示
+    implementation(libs.androidx.navigation3.runtime)
+    implementation(libs.androidx.navigation3.ui)
+    // 页面生命周期、导航宿主和各栈项的 ViewModel
+    implementation(libs.androidx.lifecycle.runtime.compose)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.lifecycle.viewmodel.navigation3)
+    // 保存与恢复类型安全路由
+    implementation(libs.kotlinx.serialization.core)
 
     // 测试相关依赖
     testImplementation(libs.junit)

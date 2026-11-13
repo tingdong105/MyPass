@@ -1,6 +1,5 @@
 package com.winter.mypass.ui.theme
 
-import android.app.Activity
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
@@ -9,7 +8,10 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 
 private val DarkColorScheme = darkColorScheme(
     primary = Purple80,
@@ -33,6 +35,12 @@ private val LightColorScheme = lightColorScheme(
     */
 )
 
+/**
+ * 应用配色与固定字体缩放主题。
+ * @param darkTheme 是否启用深色主题
+ * @param dynamicColor 是否使用系统动态配色
+ * @param content 主题内页面内容
+ */
 @Composable
 fun MyPassTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
@@ -50,9 +58,12 @@ fun MyPassTheme(
         else -> LightColorScheme
     }
 
-    MaterialTheme(
-        colorScheme = colorScheme,
-        typography = Typography,
-        content = content
-    )
+    val density = LocalDensity.current
+    CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale = 1f)) {
+        MaterialTheme(
+            colorScheme = colorScheme,
+            typography = Typography,
+            content = content
+        )
+    }
 }

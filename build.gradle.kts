@@ -2,4 +2,6 @@
 plugins {
     alias(libs.plugins.android.application) apply false
     alias(libs.plugins.kotlin.compose) apply false
+    // 为导航路由生成序列化器
+    alias(libs.plugins.kotlin.serialization) apply false
 }
