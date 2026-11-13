@@ -95,6 +95,10 @@ dependencies {
     // 保存与恢复类型安全路由
     implementation(libs.kotlinx.serialization.core)
 
+    // MMKV 高性能键值存储与对象 JSON 序列化
+    implementation(libs.mmkv)
+    implementation(libs.kotlinx.serialization.json)
+
     // 测试相关依赖
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))
