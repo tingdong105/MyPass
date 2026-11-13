@@ -7,6 +7,9 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     // KT序列化
     alias(libs.plugins.kotlin.serialization)
+    // Room 数据库代码生成与结构导出
+    alias(libs.plugins.ksp)
+    alias(libs.plugins.androidx.room)
 }
 
 // APP版本名称
@@ -74,6 +77,11 @@ android {
     }
 }
 
+room {
+    // 版本化保存业务数据库结构，方便后续迁移使用
+    schemaDirectory("$projectDir/schemas")
+}
+
 dependencies {
     // 自带的一些Compose依赖
     implementation(platform(libs.androidx.compose.bom))
@@ -98,6 +106,13 @@ dependencies {
     // MMKV 高性能键值存储与对象 JSON 序列化
     implementation(libs.mmkv)
     implementation(libs.kotlinx.serialization.json)
+
+    // Room 关系型存储、SQLCipher 整库加密与协程调度
+    implementation(libs.androidx.room.runtime)
+    ksp(libs.androidx.room.compiler)
+    implementation(libs.androidx.sqlite)
+    implementation(libs.sqlcipher)
+    implementation(libs.kotlinx.coroutines.android)
 
     // 测试相关依赖
     testImplementation(libs.junit)
