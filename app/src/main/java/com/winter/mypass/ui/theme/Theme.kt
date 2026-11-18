@@ -7,9 +7,30 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
 import top.yukonga.miuix.kmp.theme.ColorSchemeMode
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.ThemeController
+
+/**
+ * 通用界面间距与尺寸。
+ * @author Tingdong
+ * @date 2026-11-18
+ */
+internal object Theme {
+    val spacing = Spacing
+    val sizes = Sizes
+
+    object Spacing {
+        val small = 8.dp
+        val medium = 16.dp
+        val large = 24.dp
+    }
+
+    object Sizes {
+        val minimumTouchTarget = 48.dp
+    }
+}
 
 /**
  * Miuix 应用主题与固定字体缩放。

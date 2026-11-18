@@ -10,3 +10,6 @@
 #-keepclassmembers class fqcn.of.javascript.interface.for.webview {
 #   public *;
 #}
+
+# Lottie 间接依赖的 Okio 1.17.6 仅用此注解标记可空性。
+-dontwarn javax.annotation.Nullable

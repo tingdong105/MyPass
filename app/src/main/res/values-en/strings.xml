@@ -2,4 +2,32 @@
 <resources>
     <string name="app_name">MyPassword</string>
     <string name="home_greeting">Hello %1$s!</string>
+    <string name="lock_setup_title">Set an app password</string>
+    <string name="lock_choose_hint">Choose how to protect your password vault.</string>
+    <string name="lock_confirm_title">Confirm your app password</string>
+    <string name="lock_unlock_title">Welcome back</string>
+    <string name="lock_back">Back</string>
+    <string name="lock_type_pattern">Pattern</string>
+    <string name="lock_type_pin4">4-digit PIN</string>
+    <string name="lock_type_pin6">6-digit PIN</string>
+    <string name="lock_type_password">Letters and numbers</string>
+    <string name="lock_pattern_hint">Connect at least 4 dots.</string>
+    <string name="lock_pin4_hint">Enter a 4-digit PIN.</string>
+    <string name="lock_pin6_hint">Enter a 6-digit PIN.</string>
+    <string name="lock_password_hint">Use 8–64 characters, with at least one English letter and one digit.</string>
+    <string name="lock_password_label">App password</string>
+    <string name="lock_pin_progress">%1$d of %2$d digits entered</string>
+    <string name="lock_delete_digit">Delete last digit</string>
+    <string name="lock_pattern_point">Dot %1$d</string>
+    <string name="lock_clear_pattern">Clear pattern</string>
+    <string name="lock_submit">Confirm</string>
+    <string name="lock_invalid">Check the password requirements and try again.</string>
+    <string name="lock_mismatch">The entries differ. Confirm your password again.</string>
+    <string name="lock_incorrect">Incorrect app password. Try again.</string>
+    <string name="lock_wait">Too many attempts. Try again in %1$d s.</string>
+    <string name="lock_storage_error_title">App password unavailable</string>
+    <string name="lock_storage_error">Couldn’t read or save the app password on this device. Try again.</string>
+    <string name="lock_storage_invalid_record">The local app password record is missing, damaged, or in an unsupported format. The vault cannot be unlocked.</string>
+    <string name="lock_storage_missing_key">This device’s encryption key is missing or invalid. The vault cannot be unlocked.</string>
+    <string name="lock_retry">Try again</string>
 </resources>

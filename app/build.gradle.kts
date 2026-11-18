@@ -95,6 +95,8 @@ dependencies {
     // Miuix 主界面组件、主题与扩展图标
     implementation(libs.miuix.ui)
     implementation(libs.miuix.icons)
+    // Lottie动画依赖
+    implementation(libs.lottie.compose)
 
     // Compose 页面路由、回退栈与导航展示
     implementation(libs.androidx.navigation3.runtime)

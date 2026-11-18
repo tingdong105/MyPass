@@ -12,6 +12,8 @@ kotlin = "2.4.21"
 composeBom = "2026.09.00"
 # https://github.com/compose-miuix-ui/miuix
 miuix = "0.9.4"
+# https://github.com/airbnb/lottie-android
+lottie = "6.7.1"
 # https://developer.android.com/jetpack/androidx/releases/navigation3
 navigation3 = "1.2.1"
 # https://github.com/Kotlin/kotlinx.serialization
@@ -58,6 +60,7 @@ androidx-compose-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-
 androidx-compose-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4" }
 miuix-ui = { module = "top.yukonga.miuix.kmp:miuix-ui-android", version.ref = "miuix" }
 miuix-icons = { module = "top.yukonga.miuix.kmp:miuix-icons-android", version.ref = "miuix" }
+lottie-compose = { module = "com.airbnb.android:lottie-compose", version.ref = "lottie" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
