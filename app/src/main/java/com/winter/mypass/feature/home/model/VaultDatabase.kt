@@ -56,6 +56,7 @@ internal class VaultPassword(
     val account: String?,
     val website: String?,
     val notes: String?,
+    val email: String?,
 )
 
 /**
@@ -226,7 +227,7 @@ internal interface VaultDao {
  */
 @Database(
     entities = [VaultBook::class, VaultTag::class, VaultType::class, VaultPassword::class, PasswordTag::class],
-    version = 2,
+    version = 3,
 )
 internal abstract class VaultDatabase : RoomDatabase() {
     /**

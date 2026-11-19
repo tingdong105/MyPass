@@ -9,7 +9,7 @@ import com.winter.mypass.core.utils.RoomUtils
  * @date 2026-11-19
  */
 internal class VaultRepository(context: Context, private val defaultBookName: String) {
-    private val storage = RoomUtils(context, VaultDatabase::class.java, DatabaseName, VaultMigration1To2)
+    private val storage = RoomUtils(context, VaultDatabase::class.java, DatabaseName, VaultMigration1To2, VaultMigration2To3)
 
     /**
      * 验证密钥，首次使用时初始化密码本和类型。
@@ -67,6 +67,7 @@ internal class VaultRepository(context: Context, private val defaultBookName: St
             password = entry.password,
             account = entry.account.orEmpty(),
             website = entry.website.orEmpty(),
+            email = entry.email.orEmpty(),
             notes = entry.notes.orEmpty(),
             typeId = entry.typeId,
             tagIds = dao.tagIds(id).toSet(),
@@ -116,6 +117,7 @@ internal class VaultRepository(context: Context, private val defaultBookName: St
                 password = draft.password,
                 account = account,
                 website = website,
+                email = draft.email.trim().ifEmpty { null },
                 notes = draft.notes.ifEmpty { null },
                 typeId = draft.typeId,
                 createdAt = existing?.createdAt ?: now,

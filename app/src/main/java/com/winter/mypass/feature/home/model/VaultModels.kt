@@ -48,6 +48,7 @@ internal data class PasswordDraft(
     val password: String = "",
     val account: String = "",
     val website: String = "",
+    val email: String = "",
     val notes: String = "",
     val typeId: Long? = null,
     val tagIds: Set<Long> = emptySet(),

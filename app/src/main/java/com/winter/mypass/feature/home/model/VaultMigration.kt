@@ -27,6 +27,17 @@ internal val VaultMigration1To2 = object : Migration(1, 2) {
     }
 }
 
+/** 为现有密码记录添加可选邮箱字段。 */
+internal val VaultMigration2To3 = object : Migration(2, 3) {
+    /**
+     * 新增可空的邮箱列，保留原有记录和关联。
+     * @param db 当前加密数据库
+     */
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE vault_passwords ADD COLUMN email TEXT")
+    }
+}
+
 /**
  * 将旧版 entries 结构复制到 v2 表，先移除旧关联表再移除其父表。
  * @receiver 迁移事务中的数据库

@@ -192,7 +192,7 @@ private fun SortPopupRow(
  * @param kind 当前种类
  * @param snapshot 可选分类
  * @param draft 需要更新的当前草稿
- * @param onDraft 保存新选择到草稿
+ * @param onDraft 将选择应用到当前草稿
  * @param onDismiss 关闭选择器
  */
 @Composable
@@ -201,7 +201,7 @@ internal fun CategoryPicker(
     kind: CategoryKind,
     snapshot: VaultSnapshot,
     draft: PasswordDraft,
-    onDraft: (PasswordDraft) -> Unit,
+    onDraft: ((PasswordDraft) -> PasswordDraft) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val maxContent = LocalConfiguration.current.screenHeightDp.dp * 0.62f
@@ -217,22 +217,25 @@ internal fun CategoryPicker(
         ) {
             if (kind == CategoryKind.Type) {
                 VaultChoice(stringResource(R.string.vault_none), draft.typeId == null) {
-                    onDraft(draft.copy(typeId = null))
+                    onDraft { it.copy(typeId = null) }
                     onDismiss()
                 }
             }
             for (item in snapshot.categories(kind)) {
                 when (kind) {
                     CategoryKind.Book -> VaultChoice(item.name, item.id == draft.bookId) {
-                        onDraft(draft.copy(bookId = item.id))
+                        onDraft { it.copy(bookId = item.id) }
                         onDismiss()
                     }
                     CategoryKind.Type -> VaultChoice(item.name, item.id == draft.typeId) {
-                        onDraft(draft.copy(typeId = item.id))
+                        onDraft { it.copy(typeId = item.id) }
                         onDismiss()
                     }
                     CategoryKind.Tag -> VaultToggleRow(item.name, item.id in draft.tagIds) { checked ->
-                        onDraft(draft.copy(tagIds = if (checked) draft.tagIds + item.id else draft.tagIds - item.id))
+                        onDraft {
+                            val tags = if (checked) it.tagIds + item.id else it.tagIds - item.id
+                            it.copy(tagIds = tags)
+                        }
                     }
                 }
             }

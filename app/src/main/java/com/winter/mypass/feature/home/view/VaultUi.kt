@@ -3,6 +3,7 @@ package com.winter.mypass.feature.home.view
 import android.content.res.Configuration
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -28,10 +29,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.hideFromAccessibility
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
@@ -56,6 +59,15 @@ import top.yukonga.miuix.kmp.icon.extended.ChevronForward
 import top.yukonga.miuix.kmp.icon.extended.Lock
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+
+/**
+ * 阻止键盘和无障碍焦点进入浮层背后的内容。
+ * @return 带焦点组边界的底层页面修饰符
+ */
+internal fun Modifier.blockVaultBackgroundFocus(): Modifier = this
+    .focusProperties { onEnter = { cancelFocusChange() } }
+    .focusGroup()
+    .semantics { hideFromAccessibility() }
 
 /**
  * 窄屏、平板和明暗主题的界面检查。
@@ -251,6 +263,7 @@ internal fun VaultChoice(label: String, selected: Boolean, enabled: Boolean = tr
  * @param confirm 确认操作文案
  * @param onDismiss 取消回调
  * @param onConfirm 确认回调
+ * @param cancel 取消操作文案
  */
 @Composable
 internal fun VaultConfirm(
@@ -260,10 +273,11 @@ internal fun VaultConfirm(
     @StringRes confirm: Int,
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
+    @StringRes cancel: Int = R.string.vault_cancel,
 ) {
     OverlayDialog(show, title = title, summary = summary, onDismissRequest = onDismiss) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Theme.spacing.small)) {
-            TextButton(stringResource(R.string.vault_cancel), onClick = onDismiss, modifier = Modifier.weight(1f))
+            TextButton(stringResource(cancel), onClick = onDismiss, modifier = Modifier.weight(1f))
             TextButton(
                 stringResource(confirm), onClick = onConfirm, modifier = Modifier.weight(1f),
                 colors = ButtonDefaults.textButtonColorsPrimary(),

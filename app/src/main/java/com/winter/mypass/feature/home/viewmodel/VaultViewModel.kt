@@ -36,8 +36,34 @@ internal enum class VaultTab { Home, Generate, Settings }
  */
 internal sealed interface VaultPage {
     data class Detail(val draft: PasswordDraft) : VaultPage
-    data class Editor(val original: PasswordDraft, val draft: PasswordDraft) : VaultPage
+
+    /**
+     * 保留原记录和草稿，直到表单完成退场。
+     * @author Tingdong
+     * @date 2026-11-20
+     */
+    data class Editor(
+        val original: PasswordDraft,
+        val draft: PasswordDraft,
+        val phase: EditorPhase = EditorPhase.Open,
+    ) : VaultPage
+
     data class Categories(val kind: CategoryKind) : VaultPage
+}
+
+/**
+ * 密码表单的可见状态和退场后的操作。
+ * @author Tingdong
+ * @date 2026-11-20
+ */
+internal enum class EditorPhase {
+    Open,
+    ClosingCancelled,
+    ClosingSaved,
+    ClosingForDiscardConfirmation,
+    ConfirmDiscard;
+
+    val isClosing: Boolean get() = this != Open && this != ConfirmDiscard
 }
 
 /**
@@ -141,7 +167,7 @@ internal class VaultViewModel(
      * 切换当前密码本并保留搜索词。
      * @param id 密码本标识
      */
-    fun selectBook(id: Long) = perform {
+    fun selectBook(id: Long) = performFromTabs {
         val snapshot = repository.snapshot(id)
         rememberBook(snapshot.bookId)
         mutableState.value = current.copy(snapshot = snapshot)
@@ -152,6 +178,7 @@ internal class VaultViewModel(
      * @param query 查询内容
      */
     fun search(query: String) {
+        if (current.page != null) return
         mutableState.value = current.copy(query = query)
     }
 
@@ -159,7 +186,7 @@ internal class VaultViewModel(
      * 保存排序方式及逆序状态。
      * @param sort 新的排序设置
      */
-    fun sort(sort: VaultSort) = perform {
+    fun sort(sort: VaultSort) = performFromTabs {
         withContext(Dispatchers.IO) {
             check(MMKVUtils.putString(SortKey, "${sort.order.name}:${sort.reversed}"))
         }
@@ -170,7 +197,7 @@ internal class VaultViewModel(
      * 打开指定条目的详情。
      * @param id 记录标识
      */
-    fun openDetail(id: Long) = perform {
+    fun openDetail(id: Long) = performFromTabs {
         val detail = repository.detail(id)
         mutableState.value = current.copy(tab = VaultTab.Home, page = VaultPage.Detail(detail))
     }
@@ -181,7 +208,7 @@ internal class VaultViewModel(
      */
     fun newPassword(password: String = "") {
         val book = current.snapshot?.bookId ?: return
-        if (current.busy) return
+        if (current.busy || current.page != null) return
         val draft = PasswordDraft(bookId = book)
         mutableState.value = current.copy(
             tab = VaultTab.Home, page = VaultPage.Editor(draft, draft.copy(password = password)), problem = null,
@@ -189,7 +216,7 @@ internal class VaultViewModel(
     }
 
     /**
-     * 从详情打开编辑页面。
+     * 在详情上打开编辑表单。
      */
     fun editPassword() {
         val detail = current.page as? VaultPage.Detail ?: return
@@ -200,11 +227,13 @@ internal class VaultViewModel(
 
     /**
      * 更新当前表单。
-     * @param draft 修改后的草稿
+     * @param update 应用到当前草稿的字段变更
      */
-    fun editDraft(draft: PasswordDraft) {
+    fun editDraft(update: (PasswordDraft) -> PasswordDraft) {
         val editor = current.page as? VaultPage.Editor ?: return
-        if (!current.busy) mutableState.value = current.copy(page = editor.copy(draft = draft), problem = null)
+        if (current.busy || editor.phase != EditorPhase.Open) return
+        val draft = update(editor.draft)
+        mutableState.value = current.copy(page = editor.copy(draft = draft), problem = null)
     }
 
     /**
@@ -213,10 +242,57 @@ internal class VaultViewModel(
      */
     fun savePassword(allowDuplicate: Boolean = false) {
         val editor = current.page as? VaultPage.Editor ?: return
+        if (editor.phase != EditorPhase.Open) return
         val book = current.snapshot?.bookId ?: return
         perform {
             val snapshot = repository.save(editor.draft, book, allowDuplicate)
-            mutableState.value = current.copy(snapshot = snapshot, page = null)
+            mutableState.value = current.copy(snapshot = snapshot, page = editor.copy(phase = EditorPhase.ClosingSaved))
+        }
+    }
+
+    /**
+     * 从底部按钮或系统返回开始关闭密码表单。
+     * @return 是否已处理关闭请求，保存中返回 false
+     */
+    fun dismissPasswordEditor(): Boolean {
+        val editor = current.page as? VaultPage.Editor ?: return true
+        if (editor.phase != EditorPhase.Open) return true
+        if (current.busy) return false
+        val phase = if (editor.draft != editor.original) {
+            EditorPhase.ClosingForDiscardConfirmation
+        } else {
+            EditorPhase.ClosingCancelled
+        }
+        mutableState.value = current.copy(page = editor.copy(phase = phase))
+        return true
+    }
+
+    /**
+     * 接收 Sheet 退场完成通知并处理下一步。
+     */
+    fun finishPasswordEditorDismissal() {
+        val editor = current.page as? VaultPage.Editor ?: return
+        val next = when (editor.phase) {
+            EditorPhase.ClosingCancelled -> editor.original.takeIf { it.id != null }?.let { VaultPage.Detail(it) }
+            EditorPhase.ClosingSaved -> null
+            EditorPhase.ClosingForDiscardConfirmation -> editor.copy(phase = EditorPhase.ConfirmDiscard)
+            EditorPhase.Open, EditorPhase.ConfirmDiscard -> return
+        }
+        mutableState.value = current.copy(page = next, problem = current.problem.takeIf { next is VaultPage.Editor })
+    }
+
+    /**
+     * 放弃修改或重新打开原草稿。
+     * @param discard 用户是否确认放弃修改
+     */
+    fun confirmPasswordDiscard(discard: Boolean) {
+        val editor = current.page as? VaultPage.Editor ?: return
+        if (editor.phase != EditorPhase.ConfirmDiscard) return
+        if (discard) {
+            val previous = editor.original.takeIf { it.id != null }?.let { VaultPage.Detail(it) }
+            mutableState.value = current.copy(page = previous, problem = null)
+        } else {
+            mutableState.value = current.copy(page = editor.copy(phase = EditorPhase.Open))
         }
     }
 
@@ -233,12 +309,11 @@ internal class VaultViewModel(
     }
 
     /**
-     * 关闭当前页面，放弃编辑时恢复先前的详情。
+     * 从详情或分类页面返回列表。
      */
     fun closePage() {
-        if (current.busy) return
-        val previous = (current.page as? VaultPage.Editor)?.original?.takeIf { it.id != null }
-        mutableState.value = current.copy(page = previous?.let { VaultPage.Detail(it) }, problem = null)
+        if (current.busy || current.page is VaultPage.Editor) return
+        mutableState.value = current.copy(page = null, problem = null)
     }
 
     /**
@@ -246,7 +321,9 @@ internal class VaultViewModel(
      * @param kind 分类种类
      */
     fun manage(kind: CategoryKind) {
-        if (!current.busy) mutableState.value = current.copy(page = VaultPage.Categories(kind), problem = null)
+        if (!current.busy && current.page == null) {
+            mutableState.value = current.copy(page = VaultPage.Categories(kind), problem = null)
+        }
     }
 
     /**
@@ -284,7 +361,7 @@ internal class VaultViewModel(
      * 从数据库读取和复制单条密码。
      * @param id 记录标识
      */
-    fun copyPassword(id: Long) = perform { clipboard.copy(repository.password(id), sensitive = true) }
+    fun copyPassword(id: Long) = performFromTabs { clipboard.copy(repository.password(id), sensitive = true) }
 
     /**
      * 复制详情中的密码或网址。
@@ -366,6 +443,14 @@ internal class VaultViewModel(
     override fun onCleared() {
         generation?.cancel()
         mutableState.value = VaultState()
+    }
+
+    /**
+     * 仅在底栏页面处于前台时执行其操作。
+     * @param block 当前待执行操作
+     */
+    private fun performFromTabs(block: suspend () -> Unit) {
+        if (current.page == null) perform(block)
     }
 
     /**

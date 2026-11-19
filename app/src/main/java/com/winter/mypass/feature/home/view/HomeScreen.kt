@@ -112,17 +112,17 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
  * @author Tingdong
  * @date 2026-11-19
  */
-private enum class Destination(val depth: Int) { Loading(0), Tabs(0), Catalog(1), Detail(1), Editor(2) }
+private enum class Destination(val depth: Int) { Loading(0), Tabs(0), Catalog(1), Detail(1) }
 
 /**
  * 根据当前状态确定转场的目的地。
  * @receiver 当前会话状态
  */
 private val VaultState.destination: Destination
-    get() = if (snapshot == null) Destination.Loading else when (page) {
+    get() = if (snapshot == null) Destination.Loading else when (val currentPage = page) {
         is VaultPage.Categories -> Destination.Catalog
         is VaultPage.Detail -> Destination.Detail
-        is VaultPage.Editor -> Destination.Editor
+        is VaultPage.Editor -> if (currentPage.original.id == null) Destination.Tabs else Destination.Detail
         null -> Destination.Tabs
     }
 
@@ -134,6 +134,13 @@ private val VaultState.destination: Destination
 internal fun VaultScreen(model: VaultViewModel) {
     val state by model.state.collectAsStateWithLifecycle()
     val list = remember { LazyListState() }
+    val focus = LocalFocusManager.current
+    val editorOpen = state.page is VaultPage.Editor
+    LaunchedEffect(editorOpen) {
+        if (editorOpen) focus.clearFocus(force = true)
+    }
+    // 退场期间保留当前返回目标。
+    BackHandler(enabled = (state.page as? VaultPage.Editor)?.phase?.isClosing == true) { }
     LaunchedEffect(state.snapshot?.bookId, state.query, state.sort) {
         if (state.snapshot != null) list.scrollToItem(0)
     }
@@ -156,27 +163,47 @@ internal fun VaultScreen(model: VaultViewModel) {
     ) { screen ->
         val active = screen.destination == state.destination
         val snapshot = screen.snapshot
+        val page = screen.page
         if (snapshot == null) {
             VaultLoading(screen, model::load)
         } else {
-            when (val page = screen.page) {
-                is VaultPage.Detail -> PasswordDetail(
-                    page.draft, snapshot, screen.busy, screen.problem, active, model::closePage,
-                    model::editPassword, model::deletePassword, model::copyText,
+            val editor = page as? VaultPage.Editor
+            val detail = when (page) {
+                is VaultPage.Detail -> page.draft
+                is VaultPage.Editor -> page.original.takeIf { it.id != null }
+                else -> null
+            }
+            val overlays: @Composable () -> Unit = {
+                if (active && editor != null) {
+                    PasswordFormSheet(
+                        editor = editor,
+                        snapshot = snapshot,
+                        busy = screen.busy,
+                        problem = screen.problem,
+                        passwordClipboard = model.passwordEditorClipboard,
+                        onDraft = model::editDraft,
+                        onSave = model::savePassword,
+                        onDismiss = model::dismissPasswordEditor,
+                        onDismissFinished = model::finishPasswordEditorDismissal,
+                        onDiscard = model::confirmPasswordDiscard,
+                        onClearProblem = model::clearProblem,
+                    )
+                }
+            }
+            when {
+                detail != null -> PasswordDetail(
+                    detail, snapshot, screen.busy, screen.problem.takeIf { editor == null },
+                    active && editor == null, model::closePage, model::editPassword, model::deletePassword,
+                    model::copyText, overlays,
                 )
-                is VaultPage.Editor -> PasswordEditor(
-                    page, snapshot, screen.generator, screen.busy, screen.problem, active, model::editDraft,
-                    model::savePassword, model::closePage, model::clearProblem, model::generatorOptions,
-                    model::refreshGeneratedPassword, model.passwordEditorClipboard,
-                )
-                is VaultPage.Categories -> CategoryScreen(
+                page is VaultPage.Categories -> CategoryScreen(
                     page.kind, snapshot.categories(page.kind), screen.busy, screen.problem, active,
                     model::closePage, model::clearProblem, model::saveCategory, model::deleteCategory,
                 )
-                null -> VaultTopLevel(
-                    screen, snapshot, list, active, model::selectTab, model::selectBook, model::manage, model::search,
+                else -> VaultTopLevel(
+                    screen, snapshot, list, active && page == null, model::selectTab, model::selectBook, model::manage, model::search,
                     model::sort, model::clearProblem, model::openDetail, model::copyPassword, model::newPassword,
-                    model::generatorOptions, model::refreshGeneratedPassword, model::copyGenerated,
+                    model::generatorOptions, model::refreshGeneratedPassword, model::copyGenerated, overlays,
                 )
             }
         }
@@ -219,6 +246,7 @@ private fun VaultLoading(state: VaultState, retry: () -> Unit) {
  * @param onGeneratorOptions 修改生成参数
  * @param onRefreshGenerated 使用当前参数生成新密码
  * @param onCopyGenerated 复制生成结果并在成功后确认
+ * @param overlays 挂载到顶层 Scaffold 的浮层
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -239,10 +267,13 @@ private fun VaultTopLevel(
     onGeneratorOptions: (GeneratorOptions) -> Unit,
     onRefreshGenerated: () -> Unit,
     onCopyGenerated: (String, () -> Unit) -> Unit,
+    overlays: @Composable () -> Unit = {},
 ) {
     var drawer by remember { mutableStateOf(false) }
     val keyboard = WindowInsets.isImeVisible
     val tabSlideDistance = with(LocalDensity.current) { 64.dp.roundToPx() }
+    val editorOpen = state.page is VaultPage.Editor
+    val background = if (editorOpen) Modifier.blockVaultBackgroundFocus() else Modifier
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val docked = maxWidth >= VaultLayout.DockedSidebarBreakpoint
         val home = state.tab == VaultTab.Home
@@ -253,13 +284,13 @@ private fun VaultTopLevel(
         Scaffold(
             modifier = Modifier.fillMaxSize()
                 .then(if (drawerVisible) Modifier.semantics { hideFromAccessibility() } else Modifier),
-            bottomBar = { if (!keyboard) VaultNavigation(state.tab, onTab) },
+            bottomBar = { if (!keyboard) VaultNavigation(state.tab, onTab, background) },
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
         ) { navigationInsets ->
             AnimatedContent(
                 targetState = state.tab,
                 modifier = Modifier.padding(navigationInsets).consumeWindowInsets(navigationInsets)
-                    .fillMaxSize().clipToBounds(),
+                    .fillMaxSize().clipToBounds().then(background),
                 transitionSpec = {
                     val direction = if (targetState.ordinal > initialState.ordinal) {
                         SlideDirection.Start
@@ -366,8 +397,9 @@ private fun VaultTopLevel(
                     }
                 }
             }
+            overlays()
         }
-        if (!docked && home) BookDrawer(
+        if (!docked && home && !editorOpen) BookDrawer(
             drawerVisible, snapshot, state.busy, onDismiss = { drawer = false },
             onSelect = {
                 drawer = false
@@ -426,10 +458,11 @@ private fun VaultTabHeader(
  * 底部导航的三个顶层目的地。
  * @param tab 当前标签
  * @param onTab 切换当前标签
+ * @param modifier 底栏的位置和无障碍属性
  */
 @Composable
-private fun VaultNavigation(tab: VaultTab, onTab: (VaultTab) -> Unit) {
-    NavigationBar {
+private fun VaultNavigation(tab: VaultTab, onTab: (VaultTab) -> Unit, modifier: Modifier = Modifier) {
+    NavigationBar(modifier = modifier) {
         NavigationBarItem(
             tab == VaultTab.Home, { onTab(VaultTab.Home) },
             ImageVector.vectorResource(R.drawable.ic_vault_home), stringResource(R.string.vault_home),
@@ -528,7 +561,10 @@ private fun PasswordList(
                     }
                     itemsIndexed(entries, key = { _, entry -> entry.id }) { index, entry ->
                         if (index > 0) HorizontalDivider(Modifier.padding(start = 54.dp))
-                        PasswordListRow(entry, snapshot, !state.busy, { onOpen(entry.id) }, { onCopy(entry.id) })
+                        PasswordListRow(
+                            entry, snapshot, !state.busy && state.page == null,
+                            { onOpen(entry.id) }, { onCopy(entry.id) },
+                        )
                     }
                 }
             }

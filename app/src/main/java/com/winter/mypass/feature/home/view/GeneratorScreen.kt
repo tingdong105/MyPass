@@ -67,7 +67,6 @@ import top.yukonga.miuix.kmp.basic.SnackbarResult
 import top.yukonga.miuix.kmp.basic.Switch
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.Paste
 import top.yukonga.miuix.kmp.icon.extended.Refresh
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import kotlin.math.roundToInt
@@ -79,7 +78,7 @@ import kotlin.math.roundToInt
  * @param onOptions 修改生成参数
  * @param onRefresh 使用当前参数重新生成密码
  * @param onCopy 复制密码并回调成功结果
- * @param onAdd 用刚刚复制的密码打开编辑器
+ * @param onAdd 用刚刚复制的密码打开新增表单
  * @param snackbarHost 承载底部提示的状态
  */
 @Composable
@@ -126,24 +125,22 @@ internal fun GeneratorSnackbarHost(state: SnackbarHostState) {
 }
 
 /**
- * 显示实时生成的密码及可调参数，也可嵌入编辑器。
+ * 显示实时生成的密码及可调参数。
  * @param state 当前参数与生成结果
  * @param busy 是否正在执行操作
  * @param onOptions 修改生成参数
  * @param onRefresh 使用当前参数重新生成密码
  * @param copyVersion 最近一次成功复制的事件序号
  * @param onCopy 生成页复制密码
- * @param onUse 将结果填回记录编辑器
  */
 @Composable
-internal fun GeneratorPanel(
+private fun GeneratorPanel(
     state: GeneratorState,
     busy: Boolean,
     onOptions: (GeneratorOptions) -> Unit,
     onRefresh: () -> Unit,
-    copyVersion: Int = 0,
-    onCopy: ((String) -> Unit)? = null,
-    onUse: ((String) -> Unit)? = null,
+    copyVersion: Int,
+    onCopy: (String) -> Unit,
 ) {
     val options = state.options
     val actionsEnabled = !state.generating && !busy
@@ -183,19 +180,11 @@ internal fun GeneratorPanel(
                         }
                     },
                 )
-                if (onCopy != null) {
-                    GeneratorActionButton(
-                        R.string.vault_copy_action, enabled = resultAvailable,
-                        modifier = Modifier.weight(1f), primary = true,
-                        icon = { GeneratorCopyIcon(copyVersion) },
-                    ) { onCopy(state.password) }
-                } else if (onUse != null) {
-                    GeneratorActionButton(
-                        R.string.vault_fill_password, enabled = resultAvailable,
-                        modifier = Modifier.weight(1f), primary = true,
-                        icon = { Icon(MiuixIcons.Paste, contentDescription = null, modifier = Modifier.size(18.dp)) },
-                    ) { onUse(state.password) }
-                }
+                GeneratorActionButton(
+                    R.string.vault_copy_action, enabled = resultAvailable,
+                    modifier = Modifier.weight(1f), primary = true,
+                    icon = { GeneratorCopyIcon(copyVersion) },
+                ) { onCopy(state.password) }
             }
         }
         if (state.failed) VaultErrorText(VaultProblem.Storage)
