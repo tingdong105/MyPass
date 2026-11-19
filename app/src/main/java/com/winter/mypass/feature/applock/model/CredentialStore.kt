@@ -6,6 +6,7 @@ import android.provider.Settings
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.AtomicFile
+import com.winter.mypass.feature.home.model.VaultRepository
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.ByteArrayInputStream
@@ -18,7 +19,9 @@ import java.io.FileNotFoundException
 import java.io.FileOutputStream
 import java.io.IOException
 import java.nio.file.Files
+import java.nio.file.NoSuchFileException
 import java.nio.file.StandardCopyOption
+import java.nio.file.attribute.BasicFileAttributes
 import java.security.KeyStore
 import java.security.KeyStoreException
 import java.security.SecureRandom
@@ -58,11 +61,18 @@ internal class CredentialStore(context: Context) {
     }
 
     /**
-     * 已配置的凭据记录缺失、损坏或格式不受支持。
+     * 凭据记录损坏、格式不受支持或在解锁时消失。
      * @author Tingdong
      * @date 2026-11-18
      */
     class InvalidRecord(cause: Throwable? = null) : IOException("Invalid credential record", cause)
+
+    /**
+     * 本机已有密码库，但缺少对应的应用锁凭据记录。
+     * @author Tingdong
+     * @date 2026-11-19
+     */
+    class MissingRecord : IOException("Missing app lock record for existing vault")
 
     /**
      * 本机缺少已配置凭据所需的 Keystore 密钥。
@@ -74,6 +84,7 @@ internal class CredentialStore(context: Context) {
     /**
      * 读取本机凭据类型和等待期限。
      * @return 按记录状态返回待设置或已上锁
+     * @throws MissingRecord 已有密码库缺少对应的应用锁记录
      * @throws IOException 记录无法读写
      * @throws java.security.GeneralSecurityException 本机记录无法解密
      */
@@ -84,11 +95,12 @@ internal class CredentialStore(context: Context) {
     }
 
     /**
-     * 确认记录缺失后生成并保存首个凭据。
+     * 确认记录和密码库均未创建后保存首个凭据。
      * @param type 密码类型
      * @param input 已经两次确认的密码
      * @return 已解锁的会话密钥，或并发设置后所需的凭据
      * @throws IllegalArgumentException 密码格式无效
+     * @throws MissingRecord 已有密码库缺少对应的应用锁记录
      * @throws IOException 记录无法读写
      * @throws java.security.GeneralSecurityException 无法加密本机记录
      */
@@ -116,6 +128,7 @@ internal class CredentialStore(context: Context) {
      * @param type 提交时显示的密码类型
      * @param input 待验证的密码
      * @return 已解锁的会话密钥或继续上锁的状态
+     * @throws MissingRecord 已有密码库缺少对应的应用锁记录
      * @throws IOException 记录缺失或无法读写
      * @throws java.security.GeneralSecurityException 本机记录无法解密
      */
@@ -171,7 +184,8 @@ internal class CredentialStore(context: Context) {
     /**
      * 读取并认证版本化记录，区分缺失和损坏。
      * @param key 本次操作已经取得的 Keystore 密钥
-     * @return 本机记录，文件不存在时返回 null
+     * @return 本机记录，记录和密码库都不存在时返回 null
+     * @throws MissingRecord 已有密码库缺少对应的应用锁记录
      * @throws IOException 记录格式错误或无法读取
      */
     private fun readRecord(key: SecretKey? = null): Record? {
@@ -179,8 +193,14 @@ internal class CredentialStore(context: Context) {
             file.openRead()
         } catch (failure: FileNotFoundException) {
             val backup = File(file.baseFile.path + ".bak")
-            if (Files.notExists(file.baseFile.toPath()) && Files.notExists(backup.toPath())) return null
-            throw failure
+            if (!Files.notExists(file.baseFile.toPath()) || !Files.notExists(backup.toPath())) throw failure
+            val vault = appContext.getDatabasePath(VaultRepository.DatabaseName)
+            try {
+                Files.readAttributes(vault.toPath(), BasicFileAttributes::class.java)
+            } catch (_: NoSuchFileException) {
+                return null
+            }
+            throw MissingRecord()
         }
         try {
             val encrypted = DataInputStream(source).use { input ->

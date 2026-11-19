@@ -18,11 +18,14 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.winter.mypass.feature.applock.view.AppLockScreen
 import com.winter.mypass.feature.applock.viewmodel.AppLockViewModel
 import com.winter.mypass.feature.applock.viewmodel.LockScreen
+import com.winter.mypass.feature.home.model.VaultRepository
+import com.winter.mypass.feature.home.viewmodel.VaultViewModel
 import com.winter.mypass.nav.AppNavHost
 import com.winter.mypass.ui.theme.MyPassTheme
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -35,7 +38,14 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 class MainActivity : ComponentActivity() {
     private val appLock by viewModels<AppLockViewModel> {
         viewModelFactory {
-            initializer { AppLockViewModel((application as App).credentialStore) }
+            initializer {
+                val app = application as App
+                AppLockViewModel(
+                    app.credentialStore,
+                    VaultRepository(app, app.getString(R.string.vault_default_book)),
+                    app.vaultScope,
+                )
+            }
         }
     }
 
@@ -60,7 +70,10 @@ class MainActivity : ComponentActivity() {
                             enter = fadeIn(tween(200)) + slideInVertically(tween(240)) { it / 40 },
                             label = "Unlocked home",
                         ) {
-                            AppNavHost()
+                            val vault = viewModel(viewModelStoreOwner = appLock.vaultOwner) {
+                                VaultViewModel(appLock.vault, (application as App).vaultClipboard)
+                            }
+                            AppNavHost(vault)
                         }
                     }
                 } else {
@@ -90,5 +103,14 @@ class MainActivity : ComponentActivity() {
     override fun onStop() {
         if (!isChangingConfigurations) appLock.onBackground()
         super.onStop()
+    }
+
+    /**
+     * 核对失焦时到期的敏感剪贴板条目。
+     * @param hasFocus 当前窗口是否有焦点
+     */
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        (application as App).vaultClipboard.onWindowFocusChanged(hasFocus)
     }
 }

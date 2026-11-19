@@ -14,15 +14,20 @@ import androidx.navigation3.runtime.NavEntry
 import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.navigation3.runtime.serialization.NavBackStackSerializer
 import androidx.navigation3.ui.NavDisplay
+import com.winter.mypass.feature.home.viewmodel.VaultViewModel
 
 /**
  * 应用导航宿主，统一管理页面展示、状态和返回行为。
- * 使用示例：MyPassTheme { AppNavHost() }。
+ * @param vault 当前解锁会话的密码本状态
  * @param modifier 宿主布局修饰符
  * @param startRoute 首次创建页面栈时的默认入口
  */
 @Composable
-fun AppNavHost(modifier: Modifier = Modifier, startRoute: AppRoute = AppRoute.Home()) {
+internal fun AppNavHost(
+    vault: VaultViewModel,
+    modifier: Modifier = Modifier,
+    startRoute: AppRoute = AppRoute.Home(),
+) {
     // 显式使用生成的序列化器，保留重复路由各自的实例标识。
     val backStack = rememberSerializable(
         serializer = NavBackStackSerializer(NavigationEntry.serializer()),
@@ -30,7 +35,7 @@ fun AppNavHost(modifier: Modifier = Modifier, startRoute: AppRoute = AppRoute.Ho
         NavBackStack(NavigationEntry(startRoute))
     }
     val hostState = viewModel { NavigationHostViewModel() }
-    val routeProvider = remember { appEntryProvider() }
+    val routeProvider = remember(vault) { appEntryProvider(vault) }
     val navigator = remember(backStack, hostState, routeProvider) {
         AppNavigator(backStack, hostState.results) { route -> routeProvider(route) }
     }

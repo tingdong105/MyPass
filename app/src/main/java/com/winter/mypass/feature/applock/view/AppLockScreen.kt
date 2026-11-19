@@ -256,11 +256,20 @@ private fun AppLockPage(
                     is LockScreen.Unavailable -> {
                         val detail = when (screen.reason) {
                             LockStorageError.InvalidRecord -> R.string.lock_storage_invalid_record
+                            LockStorageError.MissingRecord -> R.string.lock_storage_missing_record
                             LockStorageError.MissingKey -> R.string.lock_storage_missing_key
                             LockStorageError.Retryable -> R.string.lock_storage_error
+                            LockStorageError.VaultUnavailable -> R.string.vault_open_error
                         }
-                        LockHeader(R.string.lock_storage_error_title, stringResource(detail), decoration)
-                        if (screen.reason == LockStorageError.Retryable) {
+                        val title = if (screen.reason == LockStorageError.VaultUnavailable) {
+                            R.string.vault_unavailable_title
+                        } else {
+                            R.string.lock_storage_error_title
+                        }
+                        LockHeader(title, stringResource(detail), decoration)
+                        if (screen.reason == LockStorageError.Retryable ||
+                            screen.reason == LockStorageError.VaultUnavailable
+                        ) {
                             TextButton(
                                 text = stringResource(R.string.lock_retry),
                                 onClick = onRetry,

@@ -4,10 +4,14 @@ import android.os.SystemClock
 import android.security.keystore.KeyPermanentlyInvalidatedException
 import android.util.Log
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelStore
+import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.viewModelScope
 import com.winter.mypass.feature.applock.model.CredentialStore
 import com.winter.mypass.feature.applock.model.CredentialType
+import com.winter.mypass.feature.home.model.VaultRepository
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -57,19 +61,26 @@ internal enum class LockError { Invalid, Mismatch, Incorrect }
  * @author Tingdong
  * @date 2026-11-18
  */
-internal enum class LockStorageError { InvalidRecord, MissingKey, Retryable }
+internal enum class LockStorageError { InvalidRecord, MissingRecord, MissingKey, Retryable, VaultUnavailable }
 
 /**
  * 管理首次设置、解锁操作和活动会话。
  * @author Tingdong
  * @date 2026-11-18
  */
-internal class AppLockViewModel(private val store: CredentialStore) : ViewModel() {
+internal class AppLockViewModel(
+    private val store: CredentialStore,
+    val vault: VaultRepository,
+    private val cleanupScope: CoroutineScope,
+) : ViewModel() {
     private val mutableState = MutableStateFlow(AppLockState())
     val state = mutableState.asStateFlow()
 
     private var firstInput: CharArray? = null
-    private var sessionKey: ByteArray? = null
+    val vaultOwner: ViewModelStoreOwner = object : ViewModelStoreOwner {
+        override val viewModelStore = ViewModelStore()
+    }
+    private var closing: Job? = null
     private var unlockedType: CredentialType? = null
     private var operation: Job? = null
     private var timeout: Job? = null
@@ -197,9 +208,11 @@ internal class AppLockViewModel(private val store: CredentialStore) : ViewModel(
     ) {
         val current = state.value
         mutableState.value = current.copy(busy = true, error = null, inputRevision = current.inputRevision + 1)
+        val previous = operation
         operation = viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) {
             var pendingKey: ByteArray? = null
             try {
+                previous?.join()
                 val result = withContext(Dispatchers.IO) {
                     action().also { pendingKey = (it as? CredentialStore.Result.Unlocked)?.vaultKey }
                 }
@@ -210,10 +223,7 @@ internal class AppLockViewModel(private val store: CredentialStore) : ViewModel(
                         LockError.Incorrect.takeIf { result.incorrect },
                     )
                     is CredentialStore.Result.Unlocked -> {
-                        unlockedType = checkNotNull(type)
-                        sessionKey = result.vaultKey
-                        pendingKey = null
-                        updateScreen(LockScreen.Unlocked)
+                        unlockVault(checkNotNull(type), result.vaultKey)
                     }
                 }
             } catch (cancelled: CancellationException) {
@@ -222,6 +232,7 @@ internal class AppLockViewModel(private val store: CredentialStore) : ViewModel(
                 currentCoroutineContext().ensureActive()
                 val reason = when (failure) {
                     is CredentialStore.InvalidRecord -> LockStorageError.InvalidRecord
+                    is CredentialStore.MissingRecord -> LockStorageError.MissingRecord
                     is CredentialStore.MissingKey, is KeyPermanentlyInvalidatedException -> LockStorageError.MissingKey
                     else -> LockStorageError.Retryable
                 }
@@ -235,15 +246,61 @@ internal class AppLockViewModel(private val store: CredentialStore) : ViewModel(
     }
 
     /**
-     * 清除会话密钥并重新显示已配置的凭据输入。
+     * 验证加密库后才进入解锁会话。
+     * @param type 已验证的应用锁类型
+     * @param key 此次认证产生的临时密钥
      */
+    private suspend fun unlockVault(type: CredentialType, key: ByteArray) {
+        closing?.join()
+        try {
+            vault.open(key)
+            unlockedType = type
+            updateScreen(LockScreen.Unlocked)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            currentCoroutineContext().ensureActive()
+            reportVaultFailure(failure)
+        } catch (failure: LinkageError) {
+            currentCoroutineContext().ensureActive()
+            reportVaultFailure(failure)
+        }
+    }
+
+    /**
+     * 展示加密库错误供用户重试。
+     * @param failure 打开或迁移时遇到的异常
+     */
+    private fun reportVaultFailure(failure: Throwable) {
+        Log.w("AppLock", "Vault unavailable (${failure.javaClass.simpleName})")
+        updateScreen(LockScreen.Unavailable(LockStorageError.VaultUnavailable))
+    }
+
+    /** 显示应用锁并结束数据库会话。 */
     private fun lock() {
-        sessionKey?.fill(0)
-        sessionKey = null
         val type = checkNotNull(unlockedType)
         unlockedType = null
         backgroundDeadline = null
         updateScreen(LockScreen.Locked(type, retryAt = 0))
+        closeVault()
+    }
+
+    /**
+     * 清除会话中的 ViewModel 并等待数据库关闭。
+     * @param authentication 销毁时需要等待的认证任务
+     */
+    private fun closeVault(authentication: Job? = null) {
+        vaultOwner.viewModelStore.clear()
+        val previous = closing
+        closing = cleanupScope.launch {
+            authentication?.join()
+            previous?.join()
+            try {
+                vault.close()
+            } catch (failure: Exception) {
+                Log.w("AppLock", "Vault close failed (${failure.javaClass.simpleName})")
+            }
+        }
     }
 
     /**
@@ -268,8 +325,7 @@ internal class AppLockViewModel(private val store: CredentialStore) : ViewModel(
      */
     override fun onCleared() {
         clearFirstInput()
-        sessionKey?.fill(0)
-        sessionKey = null
+        closeVault(operation)
     }
 
     private companion object {
