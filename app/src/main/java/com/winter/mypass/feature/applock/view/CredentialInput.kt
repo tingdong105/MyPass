@@ -4,9 +4,7 @@ import android.view.HapticFeedbackConstants
 import androidx.annotation.StringRes
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.LinearOutSlowInEasing
-import androidx.compose.animation.core.keyframes
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -127,12 +125,12 @@ internal fun PinInput(
 }
 
 /**
- * 输入时让掩码圆点着色、上弹并回落。
+ * 输入时让掩码圆点着色、压扁并弹起回落。
  * @param filled 是否已经输入这一位
  */
 @Composable
 private fun PinDot(filled: Boolean) {
-    val bounce = remember { Animatable(0f) }
+    val displacement = remember { Animatable(0f) }
     val color = animateColorAsState(
         targetValue = if (filled) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.disabledPrimary,
         animationSpec = tween(120),
@@ -140,27 +138,25 @@ private fun PinDot(filled: Boolean) {
     )
     LaunchedEffect(filled) {
         if (filled) {
-            bounce.animateTo(
+            displacement.animateTo(-0.30f, tween(45))
+            displacement.animateTo(
                 targetValue = 0f,
-                animationSpec = keyframes {
-                    durationMillis = 230
-                    1f at 72 using FastOutSlowInEasing
-                    -0.24f at 134 using FastOutSlowInEasing
-                    0.12f at 176 using LinearOutSlowInEasing
-                },
+                animationSpec = spring(dampingRatio = 0.40f, stiffness = 500f),
+                initialVelocity = 30f,
             )
         } else {
-            bounce.animateTo(0f, tween(100))
+            displacement.animateTo(0f, tween(100))
         }
     }
     Box(
         Modifier
             .size(12.dp)
             .graphicsLayer {
-                val offset = bounce.value
+                val offset = displacement.value
+                val stretch = 1f + 0.44f * offset
                 translationY = -5.dp.toPx() * offset
-                scaleX = 1f + 0.22f * offset
-                scaleY = 1f + 0.38f * offset
+                scaleX = 1f / stretch
+                scaleY = stretch
             }
             .drawBehind { drawCircle(color.value) },
     )
