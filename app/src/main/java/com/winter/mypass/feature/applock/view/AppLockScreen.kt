@@ -243,6 +243,7 @@ private fun AppLockPage(
                         maxPatternSide = maxPatternSide,
                         retryAt = screen.retryAt,
                         onSubmit = onSubmit,
+                        showProgress = false,
                     )
                     is LockScreen.Unavailable -> {
                         val title = if (screen.reason == LockStorageError.VaultUnavailable) {
@@ -300,6 +301,7 @@ private fun CredentialTypeOptions(enabled: Boolean, onChoose: (CredentialType) -
  * @param retryAt 允许再次验证的单调时钟时间
  * @param submitLabel 手动提交按钮的文字
  * @param bottomAligned 是否为底部输入区保留标题间距及图案操作位
+ * @param showProgress 是否显示凭据提交时的进度指示器
  * @param onSubmit 提交输入
  */
 @Composable
@@ -314,6 +316,7 @@ internal fun CredentialEntry(
     retryAt: Long = 0,
     @StringRes submitLabel: Int = R.string.lock_submit,
     bottomAligned: Boolean = false,
+    showProgress: Boolean = true,
 ) {
     val seconds by key(retryAt) {
         produceState(remainingSeconds(retryAt), retryAt) {
@@ -336,7 +339,7 @@ internal fun CredentialEntry(
                 modifier = Modifier.fillMaxWidth().heightIn(min = Theme.spacing.large),
                 contentAlignment = Alignment.Center,
             ) {
-                CredentialFeedback(state, seconds)
+                CredentialFeedback(state, seconds, showProgress)
             }
         }
         val enabled = active && !state.busy && seconds == 0L
@@ -361,7 +364,7 @@ internal fun CredentialEntry(
                 PasswordInput(enabled = enabled, submitLabel = submitLabel, onSubmit = onSubmit)
             }
         }
-        if (!feedbackAboveInput) CredentialFeedback(state, seconds)
+        if (!feedbackAboveInput) CredentialFeedback(state, seconds, showProgress)
     }
 }
 
@@ -369,11 +372,14 @@ internal fun CredentialEntry(
  * 显示验证进度、重试倒计时或错误提示。
  * @param state 当前凭据操作状态
  * @param seconds 重试前剩余秒数
+ * @param showProgress 是否显示验证进度
  */
 @Composable
-private fun CredentialFeedback(state: AppLockState, seconds: Long) {
+private fun CredentialFeedback(state: AppLockState, seconds: Long, showProgress: Boolean) {
     when {
-        state.busy -> LockProgress()
+        state.busy -> {
+            if (showProgress) LockProgress()
+        }
         seconds > 0 -> Text(
             text = stringResource(R.string.lock_wait, seconds),
             color = MiuixTheme.colorScheme.error,

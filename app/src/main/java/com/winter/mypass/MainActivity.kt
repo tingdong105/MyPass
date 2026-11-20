@@ -18,14 +18,12 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
-import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.winter.mypass.feature.applock.view.AppLockScreen
 import com.winter.mypass.feature.applock.viewmodel.AppLockViewModel
 import com.winter.mypass.feature.applock.viewmodel.LockScreen
 import com.winter.mypass.feature.home.model.VaultRepository
-import com.winter.mypass.feature.home.viewmodel.VaultViewModel
 import com.winter.mypass.nav.AppNavHost
 import com.winter.mypass.ui.theme.MyPassTheme
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -43,6 +41,7 @@ class MainActivity : ComponentActivity() {
                 AppLockViewModel(
                     app.credentialStore,
                     VaultRepository(app, app.getString(R.string.vault_default_book)),
+                    app.vaultClipboard,
                     app.vaultScope,
                 )
             }
@@ -60,7 +59,8 @@ class MainActivity : ComponentActivity() {
         setContent {
             MyPassTheme {
                 val state by appLock.state.collectAsState()
-                if (state.screen == LockScreen.Unlocked) {
+                val vault = if (state.screen == LockScreen.Unlocked) appLock.vaultModel else null
+                if (vault != null) {
                     Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.surface)) {
                         val entrance = remember {
                             MutableTransitionState(false).apply { targetState = true }
@@ -70,9 +70,6 @@ class MainActivity : ComponentActivity() {
                             enter = fadeIn(tween(200)) + slideInVertically(tween(240)) { it / 40 },
                             label = "Unlocked home",
                         ) {
-                            val vault = viewModel(viewModelStoreOwner = appLock.vaultOwner) {
-                                VaultViewModel(appLock.vault, (application as App).vaultClipboard)
-                            }
                             AppNavHost(vault, appLock)
                         }
                     }

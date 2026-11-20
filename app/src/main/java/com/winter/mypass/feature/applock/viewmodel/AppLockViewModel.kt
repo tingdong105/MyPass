@@ -4,12 +4,16 @@ import android.os.SystemClock
 import android.security.keystore.KeyPermanentlyInvalidatedException
 import android.util.Log
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.ViewModelStore
-import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
 import com.winter.mypass.feature.applock.model.CredentialStore
 import com.winter.mypass.feature.applock.model.CredentialType
+import com.winter.mypass.feature.home.model.VaultClipboard
 import com.winter.mypass.feature.home.model.VaultRepository
+import com.winter.mypass.feature.home.viewmodel.VaultViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -20,6 +24,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -70,7 +75,8 @@ internal enum class LockStorageError { InvalidRecord, MissingRecord, MissingKey,
  */
 internal class AppLockViewModel(
     private val store: CredentialStore,
-    val vault: VaultRepository,
+    private val vault: VaultRepository,
+    clipboard: VaultClipboard,
     private val cleanupScope: CoroutineScope,
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(AppLockState())
@@ -81,9 +87,13 @@ internal class AppLockViewModel(
     private var firstInput: CharArray? = null
     private var changeAuthorization: CredentialStore.ChangeAuthorization? = null
     private var changeOperation: Job? = null
-    val vaultOwner: ViewModelStoreOwner = object : ViewModelStoreOwner {
-        override val viewModelStore = ViewModelStore()
-    }
+    private val vaultStore = ViewModelStore()
+    private val vaultModels = ViewModelProvider.create(
+        store = vaultStore,
+        factory = viewModelFactory { initializer { VaultViewModel(vault, clipboard) } },
+    )
+    val vaultModel: VaultViewModel?
+        get() = if (state.value.screen == LockScreen.Unlocked) vaultModels[VaultViewModel::class] else null
     private var closing: Job? = null
     private var operation: Job? = null
     private var timeout: Job? = null
@@ -415,6 +425,7 @@ internal class AppLockViewModel(
                 val result = withContext(Dispatchers.IO) {
                     action().also { pendingKey = (it as? CredentialStore.Result.Unlocked)?.vaultKey }
                 }
+                input?.fill('\u0000')
                 when (result) {
                     CredentialStore.Result.Missing -> updateScreen(LockScreen.Choose)
                     is CredentialStore.Result.Locked -> updateScreen(
@@ -452,13 +463,20 @@ internal class AppLockViewModel(
     }
 
     /**
-     * 验证加密库后才进入解锁会话。
+     * 打开加密库并等待首页首次读取结束，再进入解锁会话。
      * @param key 此次认证产生的临时密钥
      */
     private suspend fun unlockVault(key: ByteArray) {
         closing?.join()
         try {
             vault.open(key)
+            key.fill(0)
+            try {
+                vaultModels[VaultViewModel::class].state.first { it.snapshot != null || it.problem != null }
+            } catch (failure: Throwable) {
+                closeVault()
+                throw failure
+            }
             updateScreen(LockScreen.Unlocked)
         } catch (cancelled: CancellationException) {
             throw cancelled
@@ -493,7 +511,7 @@ internal class AppLockViewModel(
      * @param authentication 销毁时需要等待的认证任务
      */
     private fun closeVault(authentication: Job? = null) {
-        vaultOwner.viewModelStore.clear()
+        vaultStore.clear()
         val previous = closing
         closing = cleanupScope.launch {
             authentication?.join()
