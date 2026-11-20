@@ -2,6 +2,7 @@ package com.winter.mypass.feature.applock.view
 
 import android.os.Build
 import android.view.HapticFeedbackConstants
+import androidx.annotation.StringRes
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.keyframes
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.absoluteOffset
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.Composable
@@ -25,6 +27,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
@@ -50,10 +53,18 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
  * 九宫格连线输入，也支持通过无障碍操作逐点选择。
  * @param enabled 是否可接受输入
  * @param maxSide 当前视窗下的网格边长上限
+ * @param submitLabel 无障碍输入的提交按钮文字
+ * @param reserveActions 是否预留按钮区域，避免选点时网格跳动
  * @param onSubmit 提交按绘制顺序编码的点
  */
 @Composable
-internal fun PatternInput(enabled: Boolean, maxSide: Dp, onSubmit: (CharArray) -> Unit) {
+internal fun PatternInput(
+    enabled: Boolean,
+    maxSide: Dp,
+    @StringRes submitLabel: Int,
+    reserveActions: Boolean,
+    onSubmit: (CharArray) -> Unit,
+) {
     var dragPath by remember { mutableStateOf(emptyList<Int>()) }
     var cursor by remember { mutableStateOf<Offset?>(null) }
     var selectedPoints by remember { mutableStateOf(emptyList<Int>()) }
@@ -181,25 +192,31 @@ internal fun PatternInput(enabled: Boolean, maxSide: Dp, onSubmit: (CharArray) -
             }
         }
     }
-    if (selectedPoints.isNotEmpty()) {
-        Row(horizontalArrangement = Arrangement.spacedBy(Theme.spacing.small)) {
-            TextButton(
-                text = stringResource(R.string.lock_clear_pattern),
-                onClick = { selectedPoints = emptyList() },
-                enabled = enabled,
-                modifier = Modifier.weight(1f),
-            )
-            TextButton(
-                text = stringResource(R.string.lock_submit),
-                onClick = {
-                    val submission = selectedPoints.encodePattern()
-                    selectedPoints = emptyList()
-                    submit(submission)
-                },
-                enabled = enabled,
-                modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.textButtonColorsPrimary(),
-            )
+    if (reserveActions || selectedPoints.isNotEmpty()) {
+        Row(
+            modifier = if (reserveActions) Modifier.fillMaxWidth().heightIn(min = Theme.sizes.minimumTouchTarget) else Modifier,
+            horizontalArrangement = Arrangement.spacedBy(Theme.spacing.small),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            if (selectedPoints.isNotEmpty()) {
+                TextButton(
+                    text = stringResource(R.string.lock_clear_pattern),
+                    onClick = { selectedPoints = emptyList() },
+                    enabled = enabled,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(
+                    text = stringResource(submitLabel),
+                    onClick = {
+                        val submission = selectedPoints.encodePattern()
+                        selectedPoints = emptyList()
+                        submit(submission)
+                    },
+                    enabled = enabled,
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.textButtonColorsPrimary(),
+                )
+            }
         }
     }
 }

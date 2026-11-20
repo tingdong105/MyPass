@@ -52,12 +52,53 @@ internal class CredentialStore(context: Context) {
      */
     sealed interface Result {
         data object Missing : Result
+        sealed interface Verification : Result
         data class Locked(
             val type: CredentialType,
             val retryAt: Long,
             val incorrect: Boolean = false,
-        ) : Result
-        class Unlocked(val vaultKey: ByteArray) : Result
+        ) : Verification, ChangeVerification
+        class Unlocked(val vaultKey: ByteArray) : Verification
+    }
+
+    /**
+     * 验证当前凭据后返回的修改授权或限流状态。
+     * @author Tingdong
+     * @date 2026-11-20
+     */
+    sealed interface ChangeVerification {
+        class Authorized(val authorization: ChangeAuthorization) : ChangeVerification
+    }
+
+    /**
+     * 新凭据的保存结果。
+     * @author Tingdong
+     * @date 2026-11-21
+     */
+    enum class ChangeResult { Saved, SameAsCurrent, StaleAuthorization }
+
+    /**
+     * 保管一次性修改所需的密码库密钥，并绑定原凭据记录。
+     * @author Tingdong
+     * @date 2026-11-20
+     */
+    class ChangeAuthorization internal constructor(
+        internal val type: CredentialType,
+        internal val salt: ByteArray,
+        private var vaultKey: ByteArray?,
+    ) {
+        /**
+         * 读取仍有效的授权密钥。
+         * @return 授权持有的密码库密钥
+         * @throws IllegalStateException 授权已使用或清除
+         */
+        internal fun requireKey(): ByteArray = checkNotNull(vaultKey)
+
+        /** 清除未使用的临时密钥。 */
+        fun clear() {
+            vaultKey?.fill(0)
+            vaultKey = null
+        }
     }
 
     /**
@@ -132,13 +173,109 @@ internal class CredentialStore(context: Context) {
      * @throws IOException 记录缺失或无法读写
      * @throws java.security.GeneralSecurityException 本机记录无法解密
      */
-    suspend fun verify(type: CredentialType, input: CharArray): Result = mutex.withLock {
+    suspend fun verify(type: CredentialType, input: CharArray): Result.Verification = mutex.withLock {
         val key = deviceKey()
-        val saved = readRecord(key) ?: throw InvalidRecord()
-        val record = reconcileCooldown(saved, key)
+        verifyRecord(key, readCurrentRecord(key), type, input)
+    }
+
+    /**
+     * 使用与解锁共用的尝试次数验证当前密码。
+     * @param type 提交时显示的密码类型
+     * @param input 当前密码
+     * @return 一次性修改授权或当前失败状态
+     * @throws IOException 记录缺失或无法读写
+     * @throws java.security.GeneralSecurityException 本机记录无法解密
+     */
+    suspend fun authorizeChange(type: CredentialType, input: CharArray): ChangeVerification = mutex.withLock {
+        val key = deviceKey()
+        val record = readCurrentRecord(key)
+        when (val result = verifyRecord(key, record, type, input)) {
+            is Result.Locked -> result
+            is Result.Unlocked -> ChangeVerification.Authorized(
+                ChangeAuthorization(record.type, record.salt, result.vaultKey),
+            )
+        }
+    }
+
+    /**
+     * 使用新凭据重新封装同一个密码库密钥，并原子更新记录。
+     * @param authorization 验证当前密码后取得的一次性授权
+     * @param type 新密码类型
+     * @param input 用户已确认的新密码
+     * @return 保存结果，新旧密码相同时保留授权供重新输入
+     * @throws IllegalArgumentException 新密码格式无效
+     * @throws IOException 记录缺失或无法读写
+     * @throws java.security.GeneralSecurityException 本机记录无法解密或加密
+     */
+    suspend fun replace(authorization: ChangeAuthorization, type: CredentialType, input: CharArray): ChangeResult =
+        mutex.withLock {
+            val vaultKey = authorization.requireKey()
+            var keepAuthorization = false
+            try {
+                require(type.accepts(input))
+                val key = deviceKey()
+                val record = readRecord(key) ?: throw InvalidRecord()
+                if (record.type != authorization.type || !record.salt.contentEquals(authorization.salt)) {
+                    return@withLock ChangeResult.StaleAuthorization
+                }
+                if (type == record.type && matchesCredential(record, input)) {
+                    keepAuthorization = true
+                    return@withLock ChangeResult.SameAsCurrent
+                }
+                val salt = ByteArray(SaltSize).also(random::nextBytes)
+                val wrapped = encrypt(deriveKey(input, salt), credentialAad(type), vaultKey)
+                writeRecord(Record(type, salt, wrapped, failed = 0, retryAt = 0, boot = UnknownBoot), key)
+                ChangeResult.Saved
+            } finally {
+                if (!keepAuthorization) authorization.clear()
+            }
+        }
+
+    /**
+     * 判断输入是否与已认证记录中的凭据相同。
+     * @param record 当前凭据记录
+     * @param input 待比较的新密码
+     * @return 输入是否能解封当前记录
+     */
+    private fun matchesCredential(record: Record, input: CharArray): Boolean = try {
+        unwrapVaultKey(record, input).fill(0)
+        true
+    } catch (_: AEADBadTagException) {
+        false
+    }
+
+    /**
+     * 使用输入的密码解封记录中的密码库密钥。
+     * @param record 当前凭据记录
+     * @param input 用于解封的密码
+     * @return 由调用方负责清除的密码库密钥
+     * @throws AEADBadTagException 输入无法通过认证
+     */
+    private fun unwrapVaultKey(record: Record, input: CharArray): ByteArray =
+        decrypt(deriveKey(input, record.salt), credentialAad(record.type), record.wrapped)
+
+    /**
+     * 读取现有凭据并恢复当前引导周期内的等待期限。
+     * @param key 本次操作取得的 Keystore 密钥
+     * @return 当前凭据记录
+     * @throws IOException 记录缺失或无法读写
+     */
+    private fun readCurrentRecord(key: SecretKey): Record =
+        reconcileCooldown(readRecord(key) ?: throw InvalidRecord(), key)
+
+    /**
+     * 在持有存储锁时验证记录，并持久化本次尝试。
+     * @param key 本次操作取得的 Keystore 密钥
+     * @param record 已恢复等待期限的凭据记录
+     * @param type 提交时显示的密码类型
+     * @param input 待验证的密码
+     * @return 解封的密钥或继续等待的状态
+     * @throws IOException 记录无法保存
+     */
+    private fun verifyRecord(key: SecretKey, record: Record, type: CredentialType, input: CharArray): Result.Verification {
         val now = SystemClock.elapsedRealtime()
         if (record.type != type || record.retryAt > now || !type.accepts(input)) {
-            return@withLock Result.Locked(record.type, record.retryAt)
+            return Result.Locked(record.type, record.retryAt)
         }
         val failed = if (record.failed == MaxAttempts) 1 else record.failed + 1
         val retryAt = if (failed == MaxAttempts) now + CooldownMillis else 0
@@ -146,13 +283,13 @@ internal class CredentialStore(context: Context) {
         // 先落盘再验证，进程中断时也保留本次尝试。
         writeRecord(attempted, key)
         val vaultKey = try {
-            decrypt(deriveKey(input, record.salt), credentialAad(type), record.wrapped)
+            unwrapVaultKey(record, input)
         } catch (_: AEADBadTagException) {
             val cooldown = if (retryAt == 0L) 0L else SystemClock.elapsedRealtime() + CooldownMillis
             if (cooldown != retryAt) writeRecord(attempted.copy(retryAt = cooldown), key)
-            return@withLock Result.Locked(type, cooldown, incorrect = true)
+            return Result.Locked(type, cooldown, incorrect = true)
         }
-        try {
+        return try {
             writeRecord(record.copy(failed = 0, retryAt = 0, boot = UnknownBoot), key)
             Result.Unlocked(vaultKey)
         } catch (failure: Throwable) {

@@ -223,16 +223,7 @@ private fun AppLockPage(
                     LockScreen.Loading -> LockProgress()
                     LockScreen.Choose -> {
                         LockHeader(R.string.lock_setup_title, stringResource(R.string.lock_choose_hint), decoration)
-                        Column(verticalArrangement = Arrangement.spacedBy(Theme.spacing.small)) {
-                            CredentialType.entries.forEach { type ->
-                                TextButton(
-                                    text = stringResource(type.label),
-                                    onClick = { onChoose(type) },
-                                    enabled = active,
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
-                            }
-                        }
+                        CredentialTypeOptions(active, onChoose)
                     }
                     is LockScreen.Setup -> CredentialEntry(
                         type = screen.type,
@@ -254,19 +245,12 @@ private fun AppLockPage(
                         onSubmit = onSubmit,
                     )
                     is LockScreen.Unavailable -> {
-                        val detail = when (screen.reason) {
-                            LockStorageError.InvalidRecord -> R.string.lock_storage_invalid_record
-                            LockStorageError.MissingRecord -> R.string.lock_storage_missing_record
-                            LockStorageError.MissingKey -> R.string.lock_storage_missing_key
-                            LockStorageError.Retryable -> R.string.lock_storage_error
-                            LockStorageError.VaultUnavailable -> R.string.vault_open_error
-                        }
                         val title = if (screen.reason == LockStorageError.VaultUnavailable) {
                             R.string.vault_unavailable_title
                         } else {
                             R.string.lock_storage_error_title
                         }
-                        LockHeader(title, stringResource(detail), decoration)
+                        LockHeader(title, stringResource(screen.reason.message), decoration)
                         if (screen.reason == LockStorageError.Retryable ||
                             screen.reason == LockStorageError.VaultUnavailable
                         ) {
@@ -287,6 +271,25 @@ private fun AppLockPage(
 }
 
 /**
+ * 列出支持的凭据类型。
+ * @param enabled 是否允许点击选项
+ * @param onChoose 选择密码类型时的回调
+ */
+@Composable
+private fun CredentialTypeOptions(enabled: Boolean, onChoose: (CredentialType) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(Theme.spacing.small)) {
+        CredentialType.entries.forEach { type ->
+            TextButton(
+                text = stringResource(type.label),
+                onClick = { onChoose(type) },
+                enabled = enabled,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    }
+}
+
+/**
  * 展示凭据输入及相应的错误或等待状态。
  * @param type 当前凭据类型
  * @param title 页面标题资源
@@ -295,10 +298,12 @@ private fun AppLockPage(
  * @param active 是否为可交互的目标页
  * @param maxPatternSide 当前视窗下的九宫格边长上限
  * @param retryAt 允许再次验证的单调时钟时间
+ * @param submitLabel 手动提交按钮的文字
+ * @param bottomAligned 是否为底部输入区保留标题间距及图案操作位
  * @param onSubmit 提交输入
  */
 @Composable
-private fun CredentialEntry(
+internal fun CredentialEntry(
     type: CredentialType,
     @StringRes title: Int,
     decoration: @Composable () -> Unit,
@@ -307,6 +312,8 @@ private fun CredentialEntry(
     maxPatternSide: Dp,
     onSubmit: (CharArray) -> Unit,
     retryAt: Long = 0,
+    @StringRes submitLabel: Int = R.string.lock_submit,
+    bottomAligned: Boolean = false,
 ) {
     val seconds by key(retryAt) {
         produceState(remainingSeconds(retryAt), retryAt) {
@@ -318,11 +325,13 @@ private fun CredentialEntry(
         }
     }
     LockHeader(title, stringResource(type.hint), decoration)
+    val feedbackAboveInput = type.pinLength > 0 || (bottomAligned && type == CredentialType.Pattern)
     Column(
+        modifier = Modifier.padding(top = if (bottomAligned) Theme.spacing.medium else 0.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(Theme.spacing.medium),
     ) {
-        if (type.pinLength > 0) {
+        if (feedbackAboveInput) {
             Box(
                 modifier = Modifier.fillMaxWidth().heightIn(min = Theme.spacing.large),
                 contentAlignment = Alignment.Center,
@@ -333,7 +342,13 @@ private fun CredentialEntry(
         val enabled = active && !state.busy && seconds == 0L
         when (type) {
             CredentialType.Pattern -> key(state.inputRevision) {
-                PatternInput(enabled = enabled, maxSide = maxPatternSide, onSubmit = onSubmit)
+                PatternInput(
+                    enabled = enabled,
+                    maxSide = maxPatternSide,
+                    submitLabel = submitLabel,
+                    reserveActions = bottomAligned,
+                    onSubmit = onSubmit,
+                )
             }
             CredentialType.Pin4, CredentialType.Pin6 -> PinInput(
                 length = type.pinLength,
@@ -343,10 +358,10 @@ private fun CredentialEntry(
                 onSubmit = onSubmit,
             )
             CredentialType.Password -> key(state.inputRevision) {
-                PasswordInput(enabled = enabled, onSubmit = onSubmit)
+                PasswordInput(enabled = enabled, submitLabel = submitLabel, onSubmit = onSubmit)
             }
         }
-        if (type.pinLength == 0) CredentialFeedback(state, seconds)
+        if (!feedbackAboveInput) CredentialFeedback(state, seconds)
     }
 }
 
@@ -371,6 +386,7 @@ private fun CredentialFeedback(state: AppLockState, seconds: Long) {
                     LockError.Invalid -> R.string.lock_invalid
                     LockError.Mismatch -> R.string.lock_mismatch
                     LockError.Incorrect -> R.string.lock_incorrect
+                    LockError.SameAsCurrent -> R.string.lock_same_as_current
                 },
             ),
             modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
@@ -385,7 +401,7 @@ private fun CredentialFeedback(state: AppLockState, seconds: Long) {
  * 仅在凭据操作持续较久时显示进度，避免快速完成时闪现转圈。
  */
 @Composable
-private fun LockProgress() {
+internal fun LockProgress() {
     val visible by produceState(false) {
         delay(300)
         value = true
@@ -429,7 +445,11 @@ private fun LockIcon() {
  * @param decoration 标题上方的内容
  */
 @Composable
-private fun LockHeader(@StringRes title: Int, description: String, decoration: @Composable () -> Unit) {
+internal fun LockHeader(
+    @StringRes title: Int,
+    description: String? = null,
+    decoration: @Composable () -> Unit = {},
+) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(Theme.spacing.small),
@@ -441,7 +461,7 @@ private fun LockHeader(@StringRes title: Int, description: String, decoration: @
             fontWeight = FontWeight.SemiBold,
             textAlign = TextAlign.Center,
         )
-        Text(
+        if (description != null) Text(
             text = description,
             color = MiuixTheme.colorScheme.onBackgroundVariant,
             style = MiuixTheme.textStyles.body2,
@@ -449,6 +469,15 @@ private fun LockHeader(@StringRes title: Int, description: String, decoration: @
         )
     }
 }
+
+internal val LockStorageError.message: Int
+    get() = when (this) {
+        LockStorageError.InvalidRecord -> R.string.lock_storage_invalid_record
+        LockStorageError.MissingRecord -> R.string.lock_storage_missing_record
+        LockStorageError.MissingKey -> R.string.lock_storage_missing_key
+        LockStorageError.Retryable -> R.string.lock_storage_error
+        LockStorageError.VaultUnavailable -> R.string.vault_open_error
+    }
 
 /**
  * 计算倒计时的剩余秒数。示例：remainingSeconds(0)。
@@ -458,7 +487,7 @@ private fun LockHeader(@StringRes title: Int, description: String, decoration: @
 private fun remainingSeconds(retryAt: Long): Long =
     ((retryAt - SystemClock.elapsedRealtime()).coerceAtLeast(0) + 999) / 1_000
 
-private val CredentialType.label: Int
+internal val CredentialType.label: Int
     get() = when (this) {
         CredentialType.Pattern -> R.string.lock_type_pattern
         CredentialType.Pin4 -> R.string.lock_type_pin4

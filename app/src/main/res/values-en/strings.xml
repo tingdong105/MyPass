@@ -4,6 +4,14 @@
     <string name="lock_setup_title">Set an app password</string>
     <string name="lock_choose_hint">Choose how to protect your password vault.</string>
     <string name="lock_confirm_title">Confirm your app password</string>
+    <string name="lock_change_title">Change app password</string>
+    <string name="lock_change_current">Enter your current password</string>
+    <string name="lock_change_type">Choose how to unlock</string>
+    <string name="lock_change_new">Set your new password</string>
+    <string name="lock_change_confirm">Confirm your new password</string>
+    <string name="lock_change_verify">Verify</string>
+    <string name="lock_change_continue">Continue</string>
+    <string name="lock_change_success">App password changed</string>
     <string name="lock_unlock_title">Welcome back</string>
     <string name="lock_back">Back</string>
     <string name="lock_type_pattern">Pattern</string>
@@ -23,6 +31,7 @@
     <string name="lock_invalid">Check the password requirements and try again.</string>
     <string name="lock_mismatch">The entries differ. Confirm your password again.</string>
     <string name="lock_incorrect">Incorrect app password. Try again.</string>
+    <string name="lock_same_as_current">Choose a password different from your current one.</string>
     <string name="lock_wait">Too many attempts. Try again in %1$d s.</string>
     <string name="lock_storage_error_title">App password unavailable</string>
     <string name="lock_storage_error">Couldn’t read or save the app password on this device. Try again.</string>
@@ -69,7 +78,9 @@
     <string name="vault_platform">Platform name</string>
     <string name="vault_password">Password</string>
     <string name="vault_password_visibility">Password visibility</string>
+    <string name="vault_security_settings">Security</string>
     <string name="vault_style_settings">Appearance</string>
+    <string name="vault_category_settings">Category management</string>
     <string name="vault_password_visibility_full">Show in full</string>
     <string name="vault_password_visibility_partial">Hide partially</string>
     <string name="vault_password_visibility_hidden">Hide completely</string>

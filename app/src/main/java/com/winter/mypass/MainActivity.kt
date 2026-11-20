@@ -73,7 +73,7 @@ class MainActivity : ComponentActivity() {
                             val vault = viewModel(viewModelStoreOwner = appLock.vaultOwner) {
                                 VaultViewModel(appLock.vault, (application as App).vaultClipboard)
                             }
-                            AppNavHost(vault)
+                            AppNavHost(vault, appLock)
                         }
                     }
                 } else {

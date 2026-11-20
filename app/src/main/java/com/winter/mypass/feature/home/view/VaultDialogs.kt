@@ -5,6 +5,7 @@ import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -436,10 +437,11 @@ private fun CategoryRow(
 }
 
 /**
- * 提供密码预览设置和分类管理入口。
+ * 提供启动密码、密码预览和分类管理入口。
  * @param preview 当前显示模式与遮罩符号
  * @param busy 是否正在保存设置
  * @param onPasswordPreview 保存预览设置
+ * @param onChangeCredential 打开启动密码修改页
  * @param onManage 打开对应分类
  */
 @Composable
@@ -447,30 +449,31 @@ internal fun VaultSettings(
     preview: PasswordPreviewSettings,
     busy: Boolean,
     onPasswordPreview: (PasswordPreviewSettings) -> Unit,
+    onChangeCredential: () -> Unit,
     onManage: (CategoryKind) -> Unit,
 ) {
     var choosingSymbol by remember { mutableStateOf(false) }
     var customSymbol by remember { mutableStateOf<String?>(null) }
     val symbolTitle = stringResource(R.string.vault_mask_symbol)
-    Column(verticalArrangement = Arrangement.spacedBy(Theme.spacing.small)) {
-        Text(
-            stringResource(R.string.vault_style_settings),
-            Modifier.padding(horizontal = Theme.spacing.medium).semantics { heading() },
-            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-            style = MiuixTheme.textStyles.body2,
+    SettingsSection(R.string.vault_security_settings) {
+        VaultLink(
+            stringResource(R.string.lock_change_title),
+            enabled = !busy,
+            icon = MiuixIcons.Lock,
+            onClick = onChangeCredential,
         )
-        VaultGroup {
-            PasswordVisibilityMenu(preview.visibility, busy) { onPasswordPreview(preview.copy(visibility = it)) }
-            VaultRowDivider()
-            VaultLink(symbolTitle, enabled = !busy, icon = MiuixIcons.Lock, value = preview.symbol) {
-                customSymbol = preview.symbol.takeUnless {
-                    it == PasswordPreviewSettings.Asterisk || it == PasswordPreviewSettings.Dot
-                }
-                choosingSymbol = true
+    }
+    SettingsSection(R.string.vault_style_settings) {
+        PasswordVisibilityMenu(preview.visibility, busy) { onPasswordPreview(preview.copy(visibility = it)) }
+        VaultRowDivider()
+        VaultLink(symbolTitle, enabled = !busy, icon = MiuixIcons.Lock, value = preview.symbol) {
+            customSymbol = preview.symbol.takeUnless {
+                it == PasswordPreviewSettings.Asterisk || it == PasswordPreviewSettings.Dot
             }
+            choosingSymbol = true
         }
     }
-    VaultGroup {
+    SettingsSection(R.string.vault_category_settings) {
         VaultLink(stringResource(R.string.vault_manage_tags), enabled = !busy, icon = MiuixIcons.Pin) {
             onManage(CategoryKind.Tag)
         }
@@ -528,6 +531,24 @@ internal fun VaultSettings(
                 }
             }
         }
+    }
+}
+
+/**
+ * 用标题和卡片组织一组相关设置。
+ * @param title 分组名称
+ * @param content 组内选项
+ */
+@Composable
+private fun SettingsSection(@StringRes title: Int, content: @Composable ColumnScope.() -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(Theme.spacing.small)) {
+        Text(
+            stringResource(title),
+            Modifier.padding(horizontal = Theme.spacing.medium).semantics { heading() },
+            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            style = MiuixTheme.textStyles.body2,
+        )
+        VaultGroup(content = content)
     }
 }
 

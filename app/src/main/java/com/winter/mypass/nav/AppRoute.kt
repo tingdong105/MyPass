@@ -20,4 +20,9 @@ sealed interface AppRoute : NavKey {
     @Serializable
     @SerialName("home")
     data class Home(val name: String = "Android") : AppRoute
+
+    /** 修改应用启动密码。 */
+    @Serializable
+    @SerialName("change_credential")
+    data object ChangeCredential : AppRoute
 }

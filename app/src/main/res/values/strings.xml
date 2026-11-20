@@ -3,6 +3,14 @@
     <string name="lock_setup_title">设置应用密码</string>
     <string name="lock_choose_hint">选择一种方式，保护你的密码本。</string>
     <string name="lock_confirm_title">再次输入应用密码</string>
+    <string name="lock_change_title">修改启动密码</string>
+    <string name="lock_change_current">输入当前密码</string>
+    <string name="lock_change_type">选择解锁方式</string>
+    <string name="lock_change_new">设置新密码</string>
+    <string name="lock_change_confirm">确认新密码</string>
+    <string name="lock_change_verify">验证</string>
+    <string name="lock_change_continue">继续</string>
+    <string name="lock_change_success">启动密码已更新</string>
     <string name="lock_unlock_title">欢迎回来</string>
     <string name="lock_back">返回</string>
     <string name="lock_type_pattern">九宫格图案</string>
@@ -22,6 +30,7 @@
     <string name="lock_invalid">输入不符合要求，请重试。</string>
     <string name="lock_mismatch">两次输入不一致，请重新确认。</string>
     <string name="lock_incorrect">应用密码错误，请重试。</string>
+    <string name="lock_same_as_current">新密码和当前密码相同，请换一个。</string>
     <string name="lock_wait">尝试次数过多，请在 %1$d 秒后重试。</string>
     <string name="lock_storage_error_title">应用密码不可用</string>
     <string name="lock_storage_error">无法读取或保存本机应用密码。请重试。</string>
@@ -68,7 +77,9 @@
     <string name="vault_platform">平台名称</string>
     <string name="vault_password">密码</string>
     <string name="vault_password_visibility">密码显示</string>
+    <string name="vault_security_settings">安全</string>
     <string name="vault_style_settings">样式设置</string>
+    <string name="vault_category_settings">分类管理</string>
     <string name="vault_password_visibility_full">全显示</string>
     <string name="vault_password_visibility_partial">半隐藏</string>
     <string name="vault_password_visibility_hidden">全隐藏</string>

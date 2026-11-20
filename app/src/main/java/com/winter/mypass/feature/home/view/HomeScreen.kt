@@ -134,9 +134,10 @@ private val VaultState.destination: Destination
 /**
  * 连接解锁后各屏的状态、返回和页面转场。
  * @param model 当前解锁会话的密码本
+ * @param onChangeCredential 打开启动密码修改页
  */
 @Composable
-internal fun VaultScreen(model: VaultViewModel) {
+internal fun VaultScreen(model: VaultViewModel, onChangeCredential: () -> Unit) {
     val state by model.state.collectAsStateWithLifecycle()
     val list = remember { LazyListState() }
     val focus = LocalFocusManager.current
@@ -204,6 +205,7 @@ internal fun VaultScreen(model: VaultViewModel) {
                     onQuery = model::search,
                     onSort = model::sort,
                     onPasswordPreview = model::setPasswordPreview,
+                    onChangeCredential = onChangeCredential,
                     onClear = model::clearProblem,
                     onOpen = model::openDetail,
                     onAdd = model::newPassword,
@@ -275,6 +277,7 @@ private fun VaultLoading(state: VaultState, retry: () -> Unit) {
  * @param onQuery 修改搜索词
  * @param onSort 修改排序
  * @param onPasswordPreview 修改密码预览设置
+ * @param onChangeCredential 打开启动密码修改页
  * @param onClear 清除错误反馈
  * @param onOpen 查看一条记录
  * @param onAdd 新建记录
@@ -297,6 +300,7 @@ private fun VaultTopLevel(
     onQuery: (String) -> Unit,
     onSort: (VaultSort) -> Unit,
     onPasswordPreview: (PasswordPreviewSettings) -> Unit,
+    onChangeCredential: () -> Unit,
     onClear: () -> Unit,
     onOpen: (Long) -> Unit,
     onAdd: (String) -> Unit,
@@ -444,7 +448,7 @@ private fun VaultTopLevel(
                         }
                         VaultTab.Settings -> VaultColumn(body, horizontalPadding = Theme.spacing.medium) {
                             VaultErrorText(state.problem)
-                            VaultSettings(state.passwordPreview, state.busy, onPasswordPreview, onManage)
+                            VaultSettings(state.passwordPreview, state.busy, onPasswordPreview, onChangeCredential, onManage)
                         }
                     }
                 }
@@ -771,7 +775,7 @@ internal fun VaultTabbedPreview(state: VaultState) {
     MyPassTheme {
         VaultTopLevel(
             state.copy(snapshot = snapshot), snapshot, remember { LazyListState() }, true,
-            {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, { _, _ -> }, {},
+            {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, { _, _ -> }, {},
         )
     }
 }

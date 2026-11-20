@@ -6,6 +6,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSerializable
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.navigation3.rememberViewModelStoreNavEntryDecorator
@@ -14,17 +15,22 @@ import androidx.navigation3.runtime.NavEntry
 import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.navigation3.runtime.serialization.NavBackStackSerializer
 import androidx.navigation3.ui.NavDisplay
+import com.winter.mypass.feature.applock.viewmodel.AppLockViewModel
 import com.winter.mypass.feature.home.viewmodel.VaultViewModel
+
+internal val LocalAppNavigator = staticCompositionLocalOf<AppNavigator> { error("当前页面缺少导航宿主") }
 
 /**
  * 应用导航宿主，统一管理页面展示、状态和返回行为。
  * @param vault 当前解锁会话的密码本状态
+ * @param appLock 当前会话的应用锁状态
  * @param modifier 宿主布局修饰符
  * @param startRoute 首次创建页面栈时的默认入口
  */
 @Composable
 internal fun AppNavHost(
     vault: VaultViewModel,
+    appLock: AppLockViewModel,
     modifier: Modifier = Modifier,
     startRoute: AppRoute = AppRoute.Home(),
 ) {
@@ -35,7 +41,7 @@ internal fun AppNavHost(
         NavBackStack(NavigationEntry(startRoute))
     }
     val hostState = viewModel { NavigationHostViewModel() }
-    val routeProvider = remember(vault) { appEntryProvider(vault) }
+    val routeProvider = remember(vault, appLock) { appEntryProvider(vault, appLock) }
     val navigator = remember(backStack, hostState, routeProvider) {
         AppNavigator(backStack, hostState.results) { route -> routeProvider(route) }
     }
@@ -47,14 +53,17 @@ internal fun AppNavHost(
         onDispose { NavigationService.unbind(hostToken) }
     }
 
-    val entryProvider = remember(backStack, routeProvider, hostState) {
+    val entryProvider = remember(backStack, routeProvider, hostState, navigator) {
         { entry: NavigationEntry ->
             val destination = routeProvider(entry.route)
             val resultContext = NavigationResultContext(entry.id, hostState.results) {
                 backStack.any { it.id == entry.id }
             }
             NavEntry(key = entry, contentKey = entry.id, metadata = destination.metadata) {
-                CompositionLocalProvider(LocalNavigationResultContext provides resultContext) {
+                CompositionLocalProvider(
+                    LocalAppNavigator provides navigator,
+                    LocalNavigationResultContext provides resultContext,
+                ) {
                     destination.Content()
                 }
             }

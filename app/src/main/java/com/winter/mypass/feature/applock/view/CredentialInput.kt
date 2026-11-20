@@ -1,6 +1,7 @@
 package com.winter.mypass.feature.applock.view
 
 import android.view.HapticFeedbackConstants
+import androidx.annotation.StringRes
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -195,10 +196,11 @@ private fun PinKey(digit: Char?, enabled: Boolean, modifier: Modifier, onClick: 
 /**
  * 显示带掩码的混合密码输入框。
  * @param enabled 是否可接受输入
+ * @param submitLabel 提交按钮的文字
  * @param onSubmit 提交混合密码字符数组
  */
 @Composable
-internal fun PasswordInput(enabled: Boolean, onSubmit: (CharArray) -> Unit) {
+internal fun PasswordInput(enabled: Boolean, @StringRes submitLabel: Int, onSubmit: (CharArray) -> Unit) {
     var value by remember { mutableStateOf("") }
     val submit: () -> Unit = {
         if (enabled && value.isNotEmpty()) {
@@ -223,7 +225,7 @@ internal fun PasswordInput(enabled: Boolean, onSubmit: (CharArray) -> Unit) {
         keyboardActions = KeyboardActions(onDone = { submit() }),
     )
     TextButton(
-        text = stringResource(R.string.lock_submit),
+        text = stringResource(submitLabel),
         onClick = submit,
         enabled = enabled && value.isNotEmpty(),
         modifier = Modifier.fillMaxWidth(),
