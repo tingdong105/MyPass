@@ -81,7 +81,7 @@ import top.yukonga.miuix.kmp.overlay.OverlayListPopup
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 /**
- * 在排序图标下方展开菜单，逆序独立于当前维度。
+ * 在排序图标下方展开菜单，选择排序方式后收起，切换逆序时保持展开。
  * @param sort 当前排序与方向
  * @param busy 是否正在保存
  * @param problem 本次排序保存失败的原因
@@ -115,7 +115,7 @@ internal fun SortMenu(
         OverlayListPopup(
             show = show,
             alignment = PopupPositionProvider.Align.End,
-            enableWindowDim = false,
+            enableWindowDim = true,
             minWidth = 0.dp,
             onDismissRequest = close,
         ) {
@@ -137,6 +137,7 @@ internal fun SortMenu(
                     VaultPopupChoice(
                         stringResource(label), busy,
                         Modifier.selectable(selected, enabled = !busy, role = Role.RadioButton) {
+                            close()
                             if (!selected) onSort(sort.copy(order = order))
                         },
                         selected = selected,
