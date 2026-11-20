@@ -158,6 +158,22 @@ internal fun VaultGroup(modifier: Modifier = Modifier, content: @Composable Colu
 }
 
 /**
+ * 显示密码记录的圆角标签。
+ * @param name 标签名称
+ */
+@Composable
+internal fun VaultTagChip(name: String) {
+    val colors = MiuixTheme.colorScheme
+    Text(
+        name,
+        Modifier.background(colors.tertiaryContainer, RoundedCornerShape(percent = 50))
+            .padding(horizontal = Theme.spacing.small, vertical = Theme.spacing.small / 2),
+        color = colors.onSurface, style = MiuixTheme.textStyles.body2,
+        maxLines = 1, overflow = TextOverflow.Ellipsis,
+    )
+}
+
+/**
  * 约束图标的光学尺寸和点击目标。
  * @param image 使用的图标
  * @param label 无障碍名称
@@ -187,9 +203,10 @@ internal fun VaultIcon(
 /**
  * 只在确实会打开下一层时使用箭头行。
  * @param title 行标题
- * @param summary 当前值
+ * @param summary 标题下方的补充内容
  * @param enabled 是否可打开
  * @param icon 可识别分类的图标
+ * @param value 尾部显示的当前值
  * @param onClick 打开下一层
  */
 @Composable
@@ -198,39 +215,41 @@ internal fun VaultLink(
     summary: String? = null,
     enabled: Boolean = true,
     icon: ImageVector? = null,
+    value: String? = null,
     onClick: () -> Unit,
 ) {
+    val secondary = MiuixTheme.colorScheme.onSurfaceVariantSummary
     BasicComponent(
         title = title, summary = summary, enabled = enabled, onClick = onClick,
         startAction = icon?.let { { Icon(it, null, Modifier.size(22.dp)) } },
         endActions = {
-            Icon(MiuixIcons.ChevronForward, null, Modifier.size(16.dp), tint = MiuixTheme.colorScheme.onSurfaceVariantSummary)
+            if (value != null) Text(
+                value, Modifier.padding(end = Theme.spacing.small), color = secondary,
+                style = MiuixTheme.textStyles.body2, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            )
+            Icon(MiuixIcons.ChevronForward, null, Modifier.size(16.dp), tint = secondary)
         },
     )
 }
 
 /**
- * 记录图形在列表与详情中使用同一视觉规则。
+ * 使用平台名称的首个字形作为列表字标。
  * @param platform 平台名称，用于显示首个字形
- * @param large 是否用于详情首屏
  */
 @Composable
-internal fun VaultGlyph(platform: String, large: Boolean = false) {
+internal fun VaultGlyph(platform: String) {
     val colors = MiuixTheme.colorScheme
     val initial = platform.trim().takeIf(String::isNotEmpty)?.let {
         val point = it.codePointAt(0)
         String(Character.toChars(point)).uppercase()
     }
     Box(
-        Modifier.size(if (large) 62.dp else 38.dp)
-            .background(colors.primary.copy(alpha = 0.12f), RoundedCornerShape(if (large) 21.dp else 13.dp)),
+        Modifier.size(38.dp)
+            .background(colors.primary.copy(alpha = 0.12f), RoundedCornerShape(13.dp)),
         contentAlignment = Alignment.Center,
     ) {
         if (initial == null) Icon(MiuixIcons.Lock, null, Modifier.size(20.dp), tint = colors.onSurface)
-        else Text(
-            initial, color = colors.onSurface, maxLines = 1,
-            style = if (large) MiuixTheme.textStyles.title2 else MiuixTheme.textStyles.title4,
-        )
+        else Text(initial, color = colors.onSurface, maxLines = 1, style = MiuixTheme.textStyles.title4)
     }
 }
 

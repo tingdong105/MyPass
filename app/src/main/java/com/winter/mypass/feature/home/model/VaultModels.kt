@@ -21,7 +21,7 @@ internal data class VaultCategory(val id: Long, val name: String, val entryCount
 internal enum class CategoryKind { Book, Tag, Type }
 
 /**
- * 列表展示和搜索使用的无密码摘要。
+ * 列表展示和搜索使用的记录摘要。
  * @author Tingdong
  * @date 2026-11-19
  */
@@ -34,7 +34,86 @@ internal data class PasswordSummary(
     val typeId: Long?,
     val createdAt: Long,
     val updatedAt: Long,
-)
+    val passwordPreview: String? = null,
+    val passwordLength: Int? = null,
+) {
+    /**
+     * 调试输出只包含记录标识。
+     * @return 不含密码和账户信息的摘要
+     */
+    override fun toString(): String = "PasswordSummary(id=$id)"
+}
+
+/**
+ * 首页卡片的密码显示方式。
+ * @author Tingdong
+ * @date 2026-11-20
+ */
+internal enum class PasswordVisibility(val storageValue: String) {
+    Full("full"),
+    Partial("partial"),
+    Hidden("hidden"),
+}
+
+/**
+ * 首页卡片的密码显示和遮罩符号偏好。
+ * @author Tingdong
+ * @date 2026-11-20
+ */
+internal data class PasswordPreviewSettings(
+    val visibility: PasswordVisibility = PasswordVisibility.Partial,
+    val symbol: String = Asterisk,
+) {
+    /**
+     * 按当前模式生成密码显示文本。
+     * @param password 原密码
+     * @param length 全隐藏查询返回的密码字符数
+     * @return 原文或遮罩后的文本
+     */
+    fun display(password: String, length: Int? = null): String {
+        if (visibility == PasswordVisibility.Full) return password
+        val count = length ?: password.codePointCount(0, password.length)
+        if (visibility == PasswordVisibility.Hidden || count <= 2) return symbol.repeat(count)
+        val edge = if (count < 6) 1 else 2
+        val start = password.offsetByCodePoints(0, edge)
+        val end = password.offsetByCodePoints(password.length, -edge)
+        return password.substring(0, start) + symbol.repeat(count - 2 * edge) + password.substring(end)
+    }
+
+    companion object {
+        const val Asterisk = "*"
+        const val Dot = "•"
+
+        /**
+         * 验证自定义遮罩是一个可显示的 Unicode 字符。
+         * @param symbol 输入的遮罩符号
+         * @return 符号是否可用
+         */
+        fun isValidSymbol(symbol: String): Boolean {
+            if (symbol.codePointCount(0, symbol.length) != 1) return false
+            val point = symbol.codePointAt(0)
+            return !Character.isWhitespace(point) && !Character.isSpaceChar(point) &&
+                when (Character.getType(point)) {
+                    Character.UNASSIGNED.toInt(), Character.CONTROL.toInt(), Character.FORMAT.toInt(),
+                    Character.SURROGATE.toInt(), Character.NON_SPACING_MARK.toInt(),
+                    Character.ENCLOSING_MARK.toInt(), Character.COMBINING_SPACING_MARK.toInt() -> false
+                    else -> true
+                }
+        }
+
+        /**
+         * 读取显示模式与符号，兼容只保存显示模式的旧值。
+         * @param value MMKV 中保存的值
+         * @return 可用的密码预览设置
+         */
+        fun fromStorage(value: String): PasswordPreviewSettings {
+            val visibility = PasswordVisibility.entries.firstOrNull { it.storageValue == value.substringBefore(':') }
+                ?: PasswordVisibility.Partial
+            val symbol = value.substringAfter(':', "").takeIf(::isValidSymbol) ?: Asterisk
+            return PasswordPreviewSettings(visibility, symbol)
+        }
+    }
+}
 
 /**
  * 只在当前解锁会话中使用的编辑草稿。

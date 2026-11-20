@@ -48,9 +48,11 @@ internal class VaultRepository(context: Context, private val defaultBookName: St
     /**
      * 读取指定密码本的摘要，密码本已删除时选最早创建的本。
      * @param bookId 用户选择的密码本
+     * @param preview 列表密码预览设置
      * @return 同一事务中的快照
      */
-    suspend fun snapshot(bookId: Long?) = storage.transaction { vaultDao().snapshot(bookId) }
+    suspend fun snapshot(bookId: Long?, preview: PasswordPreviewSettings): VaultSnapshot =
+        storage.transaction { vaultDao().snapshot(bookId, preview) }
 
     /**
      * 在打开详情时读取一条完整记录。
@@ -75,22 +77,19 @@ internal class VaultRepository(context: Context, private val defaultBookName: St
     }
 
     /**
-     * 读取待复制的单条密码。
-     * @param id 记录标识
-     * @return 密码原文
-     */
-    suspend fun password(id: Long): String = storage.useDatabase {
-        vaultDao().password(id) ?: throw VaultException(VaultProblem.Missing)
-    }
-
-    /**
      * 检查重复并保存记录及标签关联。
      * @param draft 待保存草稿
      * @param currentBook 当前列表所属的密码本
      * @param allowDuplicate 用户已确认保留重复条目
+     * @param preview 列表密码预览设置
      * @return 提交后的列表快照
      */
-    suspend fun save(draft: PasswordDraft, currentBook: Long, allowDuplicate: Boolean): VaultSnapshot =
+    suspend fun save(
+        draft: PasswordDraft,
+        currentBook: Long,
+        allowDuplicate: Boolean,
+        preview: PasswordPreviewSettings,
+    ): VaultSnapshot =
         storage.transaction {
             val dao = vaultDao()
             val platform = draft.platform.trim()
@@ -103,7 +102,7 @@ internal class VaultRepository(context: Context, private val defaultBookName: St
             val identityChanged = existing == null || existing.bookId != draft.bookId ||
                 !existing.platform.equals(platform, ignoreCase = true) ||
                 !existing.account.orEmpty().equals(account.orEmpty(), ignoreCase = true)
-            if (!allowDuplicate && identityChanged && dao.summaries(draft.bookId).any {
+            if (!allowDuplicate && identityChanged && dao.summaries(draft.bookId, includePassword = false).any {
                     it.id != draft.id && it.platform.equals(platform, ignoreCase = true) &&
                         it.account.orEmpty().equals(account.orEmpty(), ignoreCase = true)
                 }
@@ -129,19 +128,20 @@ internal class VaultRepository(context: Context, private val defaultBookName: St
                 value.id
             }
             if (draft.tagIds.isNotEmpty()) dao.insertPasswordTags(draft.tagIds.map { PasswordTag(id, it) })
-            dao.snapshot(currentBook)
+            dao.snapshot(currentBook, preview)
         }
 
     /**
      * 删除指定记录并读取更新后的快照。
      * @param id 记录标识
      * @param bookId 当前密码本
+     * @param preview 列表密码预览设置
      * @return 当前列表快照
      */
-    suspend fun deletePassword(id: Long, bookId: Long): VaultSnapshot = storage.transaction {
+    suspend fun deletePassword(id: Long, bookId: Long, preview: PasswordPreviewSettings): VaultSnapshot = storage.transaction {
         val dao = vaultDao()
         dao.deletePassword(id)
-        dao.snapshot(bookId)
+        dao.snapshot(bookId, preview)
     }
 
     /**
@@ -150,9 +150,16 @@ internal class VaultRepository(context: Context, private val defaultBookName: St
      * @param id 已有分类标识，新建时为空
      * @param rawName 输入的名称
      * @param bookId 当前密码本
+     * @param preview 列表密码预览设置
      * @return 更新后的列表，新建密码本时选中新本
      */
-    suspend fun saveCategory(kind: CategoryKind, id: Long?, rawName: String, bookId: Long): VaultSnapshot =
+    suspend fun saveCategory(
+        kind: CategoryKind,
+        id: Long?,
+        rawName: String,
+        bookId: Long,
+        preview: PasswordPreviewSettings,
+    ): VaultSnapshot =
         storage.transaction {
             val dao = vaultDao()
             val name = rawName.trim()
@@ -176,7 +183,7 @@ internal class VaultRepository(context: Context, private val defaultBookName: St
                     bookId
                 }
             }
-            dao.snapshot(nextBook)
+            dao.snapshot(nextBook, preview)
         }
 
     /**
@@ -184,9 +191,15 @@ internal class VaultRepository(context: Context, private val defaultBookName: St
      * @param kind 分类种类
      * @param id 分类标识
      * @param bookId 当前密码本
+     * @param preview 列表密码预览设置
      * @return 更新后的快照
      */
-    suspend fun deleteCategory(kind: CategoryKind, id: Long, bookId: Long): VaultSnapshot = storage.transaction {
+    suspend fun deleteCategory(
+        kind: CategoryKind,
+        id: Long,
+        bookId: Long,
+        preview: PasswordPreviewSettings,
+    ): VaultSnapshot = storage.transaction {
         val dao = vaultDao()
         when (kind) {
             CategoryKind.Book -> {
@@ -199,22 +212,31 @@ internal class VaultRepository(context: Context, private val defaultBookName: St
             CategoryKind.Tag -> dao.deleteTag(id)
             CategoryKind.Type -> dao.deleteType(id)
         }
-        dao.snapshot(bookId)
+        dao.snapshot(bookId, preview)
     }
 
     /**
      * 读取分类和当前本的摘要及标签。
      * @receiver 当前事务中的 DAO
      * @param bookId 用户选择的密码本
+     * @param preview 列表密码预览设置
      * @return 当前列表快照
      */
-    private suspend fun VaultDao.snapshot(bookId: Long?): VaultSnapshot {
+    private suspend fun VaultDao.snapshot(bookId: Long?, preview: PasswordPreviewSettings): VaultSnapshot {
         val books = books()
         val tags = tags()
         val selected = books.firstOrNull { it.id == bookId } ?: books.first()
         val names = tags.associateBy(VaultCategory::id)
         val links = passwordTags(selected.id).groupBy(PasswordTag::passwordId) { names.getValue(it.tagId) }
-        return VaultSnapshot(books, tags, types(), selected.id, summaries(selected.id), links)
+        val hidden = preview.visibility == PasswordVisibility.Hidden
+        val entries = summaries(selected.id, includePassword = !hidden, includePasswordLength = hidden)
+        val previews = if (preview.visibility == PasswordVisibility.Full) entries else entries.map { entry ->
+            entry.copy(
+                passwordPreview = preview.display(entry.passwordPreview.orEmpty(), entry.passwordLength),
+                passwordLength = null,
+            )
+        }
+        return VaultSnapshot(books, tags, types(), selected.id, previews, links)
     }
 
     /**

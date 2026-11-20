@@ -1,225 +1,406 @@
 package com.winter.mypass.feature.home.view
 
-import android.content.ActivityNotFoundException
-import android.content.Intent
-import android.net.Uri
-import android.widget.Toast
-import androidx.activity.compose.BackHandler
+import androidx.annotation.StringRes
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.paneTitle
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import com.winter.mypass.R
 import com.winter.mypass.feature.home.model.PasswordDraft
+import com.winter.mypass.feature.home.model.VaultCategory
 import com.winter.mypass.feature.home.model.VaultProblem
 import com.winter.mypass.feature.home.model.VaultSnapshot
-import com.winter.mypass.feature.home.model.browserWebsite
+import com.winter.mypass.feature.home.viewmodel.DetailPhase
+import com.winter.mypass.feature.home.viewmodel.VaultPage
+import com.winter.mypass.feature.home.viewmodel.VaultState
 import com.winter.mypass.ui.theme.MyPassTheme
 import com.winter.mypass.ui.theme.Theme
-import top.yukonga.miuix.kmp.basic.BasicComponent
-import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.Text
-import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.icon.MiuixIcons
-import top.yukonga.miuix.kmp.icon.extended.Back
-import top.yukonga.miuix.kmp.icon.extended.Copy
+import top.yukonga.miuix.kmp.icon.extended.ChevronForward
+import top.yukonga.miuix.kmp.icon.extended.Close
+import top.yukonga.miuix.kmp.icon.extended.Contacts
+import top.yukonga.miuix.kmp.icon.extended.Delete
 import top.yukonga.miuix.kmp.icon.extended.Edit
-import top.yukonga.miuix.kmp.icon.extended.Hide
+import top.yukonga.miuix.kmp.icon.extended.Email
+import top.yukonga.miuix.kmp.icon.extended.Folder
+import top.yukonga.miuix.kmp.icon.extended.Layers
 import top.yukonga.miuix.kmp.icon.extended.Link
-import top.yukonga.miuix.kmp.icon.extended.Show
+import top.yukonga.miuix.kmp.icon.extended.Notes
+import top.yukonga.miuix.kmp.icon.extended.Pin
+import top.yukonga.miuix.kmp.layout.BottomSheetDefaults
+import top.yukonga.miuix.kmp.overlay.OverlayBottomSheet
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 /**
- * 显示单条记录，集中放置查看和复制密码的操作。
- * @param entry 当前记录
+ * 在密码本上方显示详情和复制、编辑及删除操作。
+ * @param detail 当前记录及 Sheet 阶段
  * @param snapshot 当前可用分类
  * @param busy 是否正在执行操作
  * @param problem 操作错误
- * @param active 页面是否拥有返回事件
- * @param onBack 回到列表
+ * @param onDismiss 开始收起详情
+ * @param onDismissFinished 完成退场后移除详情
  * @param onEdit 进入编辑
  * @param onDelete 删除当前记录
- * @param onCopy 复制内容及其敏感标记
- * @param overlays 显示在详情上的浮层
+ * @param onCopy 复制内容，按需通知成功
  */
 @Composable
-internal fun PasswordDetail(
-    entry: PasswordDraft,
+internal fun PasswordDetailSheet(
+    detail: VaultPage.Detail,
     snapshot: VaultSnapshot,
     busy: Boolean,
     problem: VaultProblem?,
-    active: Boolean,
-    onBack: () -> Unit,
+    onDismiss: () -> Unit,
+    onDismissFinished: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
-    onCopy: (String, Boolean) -> Unit,
-    overlays: @Composable () -> Unit = {},
+    onCopy: (String, Boolean, (() -> Unit)?) -> Unit,
 ) {
-    var revealed by remember(entry.id, active) { mutableStateOf(false) }
-    var deleting by remember(entry.id, active) { mutableStateOf(false) }
-    val enabled = active && !busy
-    val colors = MiuixTheme.colorScheme
-    BackHandler(enabled = active, onBack = onBack)
-    VaultFrame(
-        title = stringResource(R.string.vault_record),
-        navigationIcon = { VaultIcon(MiuixIcons.Back, R.string.lock_back, enabled, VaultLayout.HeaderIconSize, onBack) },
-        actions = { VaultIcon(MiuixIcons.Edit, R.string.vault_edit, enabled, VaultLayout.HeaderIconSize, onEdit) },
-    ) { modifier ->
-        val detailModifier = if (active) modifier else modifier.blockVaultBackgroundFocus()
-        VaultColumn(detailModifier) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(Theme.spacing.medium),
-            ) {
-                VaultGlyph(entry.platform, large = true)
-                Column(verticalArrangement = Arrangement.spacedBy(Theme.spacing.small)) {
-                    Text(entry.platform, style = MiuixTheme.textStyles.title1)
-                    if (entry.account.isNotBlank()) Text(entry.account, color = colors.onSurfaceVariantSummary)
-                }
-            }
+    val entry = detail.draft
+    val open = detail.phase == DetailPhase.Open
+    var deleting by remember(entry.id) { mutableStateOf(false) }
+    val enabled = open && !busy && !deleting
+    val sheetTitle = stringResource(R.string.vault_record)
 
+    LaunchedEffect(Unit) {
+        // 页面重建时补上被中断的退场回调。
+        if (!open) onDismissFinished()
+    }
+
+    OverlayBottomSheet(
+        show = open,
+        modifier = Modifier.semantics { paneTitle = sheetTitle },
+        sheetMaxWidth = VaultLayout.PaneWidth,
+        insideMargin = DpSize(Theme.spacing.medium, 0.dp),
+        allowDismiss = enabled,
+        onDismissRequest = onDismiss,
+        onDismissFinished = onDismissFinished,
+    ) {
+        PasswordDetailContent(
+            entry, snapshot, enabled, problem, onDismiss, onEdit, { deleting = true }, onCopy,
+        )
+    }
+
+    VaultConfirm(
+        open && deleting, stringResource(R.string.vault_delete_record),
+        stringResource(R.string.vault_confirm_record, entry.platform), R.string.vault_delete,
+        onDismiss = { deleting = false }, onConfirm = {
+            deleting = false
+            onDelete()
+        },
+    )
+}
+
+/**
+ * 排列详情标题、密码操作和补充字段。
+ * @param entry 当前记录
+ * @param snapshot 当前可用分类
+ * @param enabled 是否接受操作
+ * @param problem 操作错误
+ * @param onDismiss 关闭详情
+ * @param onEdit 编辑记录
+ * @param onRequestDelete 请求删除确认
+ * @param onCopy 复制内容，按需通知成功
+ */
+@Composable
+private fun PasswordDetailContent(
+    entry: PasswordDraft,
+    snapshot: VaultSnapshot,
+    enabled: Boolean,
+    problem: VaultProblem?,
+    onDismiss: () -> Unit,
+    onEdit: () -> Unit,
+    onRequestDelete: () -> Unit,
+    onCopy: (String, Boolean, (() -> Unit)?) -> Unit,
+) {
+    Column(
+        Modifier.fillMaxWidth()
+            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom)),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth()
+                .padding(start = Theme.spacing.medium, end = Theme.spacing.small, bottom = Theme.spacing.medium),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                entry.platform, Modifier.weight(1f).padding(end = Theme.spacing.small).semantics { heading() },
+                style = MiuixTheme.textStyles.title3, maxLines = 2, overflow = TextOverflow.Ellipsis,
+            )
+            VaultIcon(MiuixIcons.Edit, R.string.vault_edit, enabled, onClick = onEdit)
+            VaultIcon(MiuixIcons.Close, R.string.vault_close, enabled, onClick = onDismiss)
+        }
+
+        Column(
+            modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(bottom = Theme.spacing.large),
+            verticalArrangement = Arrangement.spacedBy(Theme.spacing.medium),
+        ) {
             VaultErrorText(problem)
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                insideMargin = PaddingValues(Theme.spacing.medium),
-                colors = CardDefaults.defaultColors(colors.primary.copy(alpha = 0.10f), colors.onSurface),
-            ) {
-                Text(
-                    stringResource(R.string.vault_password),
-                    color = colors.onSurfaceVariantSummary,
-                    style = MiuixTheme.textStyles.body2,
-                )
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        if (revealed) entry.password else "••••••••",
-                        modifier = Modifier.weight(1f),
-                        fontFamily = FontFamily.Monospace,
-                        style = MiuixTheme.textStyles.title3,
-                    )
-                    PasswordEye(revealed, enabled) { revealed = !revealed }
-                    VaultIcon(MiuixIcons.Copy, R.string.vault_copy_password, enabled = enabled) {
-                        onCopy(entry.password, true)
-                    }
-                }
-            }
-
-            val hasWebsite = entry.website.isNotBlank()
-            val hasEmail = entry.email.isNotBlank()
-            val hasNotes = entry.notes.isNotBlank()
-            if (hasWebsite || hasEmail || hasNotes) VaultGroup {
-                if (hasWebsite) WebsiteRow(entry.website, enabled) { onCopy(entry.website, false) }
-                if (hasEmail) {
-                    if (hasWebsite) VaultRowDivider()
-                    BasicComponent(title = stringResource(R.string.vault_email), summary = entry.email)
-                }
-                if (hasNotes) {
-                    if (hasWebsite || hasEmail) VaultRowDivider()
-                    BasicComponent(
-                        title = stringResource(R.string.vault_notes),
-                        summary = entry.notes,
-                    )
-                }
-            }
+            DetailPasswordCard(entry.password, enabled) { onCopied -> onCopy(entry.password, true, onCopied) }
 
             val bookName = snapshot.books.firstOrNull { it.id == entry.bookId }?.name
             val typeName = snapshot.typeName(entry.typeId)
-            val tags = snapshot.tags.filter { it.id in entry.tagIds }.joinToString("、") { it.name }
-            if (bookName != null || typeName != null || tags.isNotEmpty()) VaultGroup {
-                if (bookName != null) BasicComponent(title = stringResource(R.string.vault_book), summary = bookName)
-                if (typeName != null) {
-                    if (bookName != null) VaultRowDivider()
-                    BasicComponent(title = stringResource(R.string.vault_type), summary = typeName)
+            val tags = snapshot.tags.filter { it.id in entry.tagIds }
+            val fields = listOf(
+                Triple(R.string.vault_account, MiuixIcons.Contacts, entry.account),
+                Triple(R.string.vault_website, MiuixIcons.Link, entry.website),
+                Triple(R.string.vault_email, MiuixIcons.Email, entry.email),
+                Triple(R.string.vault_notes, MiuixIcons.Notes, entry.notes),
+                Triple(R.string.vault_book, MiuixIcons.Folder, bookName),
+                Triple(R.string.vault_type, MiuixIcons.Layers, typeName),
+            ).filter { !it.third.isNullOrBlank() }
+            VaultGroup {
+                fields.forEachIndexed { index, (label, icon, value) ->
+                    if (index > 0) DetailFieldDivider()
+                    key(label) {
+                        val text = value.orEmpty()
+                        DetailField(label, icon, text, enabled) { onCopy(text, false, null) }
+                    }
                 }
                 if (tags.isNotEmpty()) {
-                    if (bookName != null || typeName != null) VaultRowDivider()
-                    BasicComponent(title = stringResource(R.string.vault_tags), summary = tags)
+                    if (fields.isNotEmpty()) DetailFieldDivider()
+                    DetailTags(tags, enabled) {
+                        onCopy(tags.joinToString("、") { it.name }, false, null)
+                    }
+                }
+                if (fields.isNotEmpty() || tags.isNotEmpty()) DetailFieldDivider()
+                DetailListRow(
+                    label = R.string.vault_delete_record, icon = MiuixIcons.Delete,
+                    enabled = enabled, destructive = true, onClick = onRequestDelete,
+                ) {
+                    Icon(
+                        MiuixIcons.ChevronForward, null, Modifier.size(Theme.spacing.medium),
+                        tint = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    )
                 }
             }
-            TextButton(
-                stringResource(R.string.vault_delete_record),
-                onClick = { deleting = true }, enabled = enabled, modifier = Modifier.align(Alignment.End),
-                colors = ButtonDefaults.textButtonColors(color = colors.errorContainer, textColor = colors.error),
-            )
         }
-        VaultConfirm(
-            active && deleting, stringResource(R.string.vault_delete_record),
-            stringResource(R.string.vault_confirm_record, entry.platform), R.string.vault_delete,
-            onDismiss = { deleting = false }, onConfirm = {
-                deleting = false
-                onDelete()
-            },
-        )
-        overlays()
     }
 }
 
 /**
- * 网址行的主操作是打开浏览器，次操作是复制。
- * @param address 保存的网址
- * @param enabled 是否接受点击
- * @param onCopy 复制网址
+ * 在独立卡片显示原密码，复制按钮垂直居中。
+ * @param password 原密码
+ * @param enabled 是否接受操作
+ * @param onCopy 复制原密码并通知成功
  */
 @Composable
-private fun WebsiteRow(address: String, enabled: Boolean, onCopy: () -> Unit) {
-    val context = LocalContext.current
-    val website = remember(address) { browserWebsite(address) }
-    BasicComponent(
-        title = stringResource(R.string.vault_website), summary = address,
-        enabled = enabled,
-        onClickLabel = stringResource(R.string.vault_open_url),
-        onClick = website?.let { url ->
-            {
-                try {
-                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE))
-                } catch (_: ActivityNotFoundException) {
-                    Toast.makeText(context, R.string.vault_no_browser, Toast.LENGTH_SHORT).show()
-                } catch (_: SecurityException) {
-                    Toast.makeText(context, R.string.vault_no_browser, Toast.LENGTH_SHORT).show()
-                }
+private fun DetailPasswordCard(
+    password: String,
+    enabled: Boolean,
+    onCopy: (() -> Unit) -> Unit,
+) {
+    val colors = MiuixTheme.colorScheme
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        insideMargin = PaddingValues(
+            start = Theme.spacing.medium, end = Theme.spacing.small,
+            top = Theme.spacing.medium, bottom = Theme.spacing.medium,
+        ),
+        colors = CardDefaults.defaultColors(colors.primary.copy(alpha = 0.10f), colors.onSurface),
+    ) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(Theme.spacing.small),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Theme.spacing.small)) {
+                Text(
+                    stringResource(R.string.vault_password),
+                    color = colors.onSurfaceVariantSummary, style = MiuixTheme.textStyles.body2,
+                )
+                Text(password, style = MiuixTheme.textStyles.title2, fontFamily = FontFamily.Monospace)
             }
-        },
-        startAction = { Icon(MiuixIcons.Link, null, Modifier.size(22.dp)) },
-        endActions = { VaultIcon(MiuixIcons.Copy, R.string.vault_copy_url, enabled, onClick = onCopy) },
-    )
+            VaultCopyButton(enabled, onCopy = onCopy)
+        }
+    }
 }
 
 /**
- * 密码可见性按钮使用相同的点击和无障碍语义。
- * @param revealed 密码是否可见
- * @param enabled 是否可切换
- * @param onToggle 切换可见性
+ * 左右对齐表单字段，点击整行复制字段值。
+ * @param label 本地化字段名
+ * @param icon 字段图标
+ * @param value 字段内容
+ * @param enabled 是否接受点击
+ * @param onCopy 复制字段值
  */
 @Composable
-internal fun PasswordEye(revealed: Boolean, enabled: Boolean, onToggle: () -> Unit) {
-    VaultIcon(
-        if (revealed) MiuixIcons.Hide else MiuixIcons.Show,
-        if (revealed) R.string.vault_hide else R.string.vault_show,
-        enabled, onClick = onToggle,
+private fun DetailField(
+    @StringRes label: Int,
+    icon: ImageVector,
+    value: String,
+    enabled: Boolean,
+    onCopy: () -> Unit,
+) {
+    val colors = MiuixTheme.colorScheme
+    DetailListRow(
+        label, icon, enabled, onClickLabel = stringResource(R.string.vault_copy_action),
+        onClick = onCopy,
+    ) {
+        Text(
+            value, Modifier.weight(2f), textAlign = TextAlign.End,
+            color = colors.onSurface, style = MiuixTheme.textStyles.body1,
+        )
+    }
+}
+
+/**
+ * 将标签靠右排列，空间不足时换行。
+ * @param tags 当前记录的标签
+ * @param enabled 是否允许复制
+ * @param onCopy 复制整行标签
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun DetailTags(tags: List<VaultCategory>, enabled: Boolean, onCopy: () -> Unit) {
+    DetailListRow(
+        R.string.vault_tags, MiuixIcons.Pin, enabled,
+        onClickLabel = stringResource(R.string.vault_copy_action),
+        onClick = onCopy,
+    ) {
+        FlowRow(
+            modifier = Modifier.weight(2f),
+            horizontalArrangement = Arrangement.spacedBy(Theme.spacing.small / 2, Alignment.End),
+            verticalArrangement = Arrangement.spacedBy(Theme.spacing.small / 2),
+        ) {
+            for (tag in tags) VaultTagChip(tag.name)
+        }
+    }
+}
+
+/**
+ * 为详情的字段和操作提供统一的列表行。
+ * @param label 字段或操作名称
+ * @param icon 名称前的图标
+ * @param enabled 是否可操作
+ * @param destructive 是否使用删除操作的强调色
+ * @param onClickLabel 无障碍点击提示
+ * @param onClick 行的点击操作
+ * @param trailing 行尾的值或箭头
+ */
+@Composable
+private fun DetailListRow(
+    @StringRes label: Int,
+    icon: ImageVector,
+    enabled: Boolean,
+    destructive: Boolean = false,
+    onClickLabel: String? = null,
+    onClick: () -> Unit,
+    trailing: @Composable RowScope.() -> Unit,
+) {
+    val colors = MiuixTheme.colorScheme
+    val tint = if (destructive) colors.error else colors.onSurfaceVariantSummary
+    Row(
+        modifier = Modifier.fillMaxWidth().heightIn(min = Theme.sizes.minimumTouchTarget)
+            .clickable(enabled = enabled, onClickLabel = onClickLabel, onClick = onClick)
+            .padding(horizontal = Theme.spacing.medium, vertical = Theme.spacing.small + Theme.spacing.small / 2),
+        horizontalArrangement = Arrangement.spacedBy(Theme.spacing.small / 2),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Icon(icon, null, Modifier.size(20.dp), tint = tint)
+        Text(
+            stringResource(label), Modifier.weight(1f).padding(start = Theme.spacing.small / 2),
+            color = tint, style = MiuixTheme.textStyles.body1,
+        )
+        trailing()
+    }
+}
+
+/**
+ * 绘制与字段文字内边距对齐的虚线。
+ */
+@Composable
+private fun DetailFieldDivider() {
+    val color = MiuixTheme.colorScheme.dividerLine
+    Spacer(
+        Modifier.fillMaxWidth().padding(horizontal = Theme.spacing.medium).height(1.dp).drawBehind {
+            drawLine(
+                color, Offset(0f, center.y), Offset(size.width, center.y), strokeWidth = size.height,
+                pathEffect = PathEffect.dashPathEffect(floatArrayOf(4.dp.toPx(), 4.dp.toPx())),
+            )
+        },
     )
 }
 
-/** 预览密码详情的分组和复制操作。 */
+/** 预览详情 Sheet 的展开布局。 */
 @VaultPreviews
 @Composable
 internal fun PasswordDetailPreview() {
-    val entry = previewEntry()
+    val sample = previewSnapshot()
+    val tags = sample.tags + listOf(
+        VaultCategory(2, "常用服务", 1),
+        VaultCategory(3, "个人账号", 1),
+        VaultCategory(4, "开发与部署", 1),
+    )
+    val detail = VaultPage.Detail(previewEntry().copy(tagIds = tags.map(VaultCategory::id).toSet()))
+    val snapshot = sample.copy(tags = tags)
     MyPassTheme {
-        PasswordDetail(entry, previewSnapshot(), false, null, true, {}, {}, {}, { _, _ -> })
+        val colors = MiuixTheme.colorScheme
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
+            VaultTabbedPreview(VaultState(snapshot = snapshot, page = detail))
+            Box(Modifier.fillMaxSize().background(colors.windowDimming))
+            Card(
+                modifier = Modifier.widthIn(max = VaultLayout.PaneWidth).fillMaxWidth(),
+                cornerRadius = BottomSheetDefaults.cornerRadius,
+                insideMargin = PaddingValues(horizontal = Theme.spacing.medium),
+                colors = CardDefaults.defaultColors(BottomSheetDefaults.backgroundColor(), colors.onSurface),
+            ) {
+                Spacer(
+                    Modifier.align(Alignment.CenterHorizontally).padding(vertical = Theme.spacing.medium)
+                        .width(32.dp).height(4.dp)
+                        .background(BottomSheetDefaults.dragHandleColor(), RoundedCornerShape(percent = 50)),
+                )
+                PasswordDetailContent(
+                    detail.draft, snapshot, true, null, {}, {}, {}, { _, _, _ -> },
+                )
+            }
+        }
     }
 }

@@ -4,7 +4,6 @@ import android.annotation.SuppressLint
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
-import android.os.Build
 import android.os.PersistableBundle
 import android.os.SystemClock
 import android.widget.Toast
@@ -28,6 +27,7 @@ internal class VaultClipboard(private val context: Context, private val scope: C
     private var focused = false
     private var pending: PendingClip? = null
     private var timer: Job? = null
+    private var copyToast: Toast? = null
 
     // Compose 的粘贴菜单要求剪贴板实现 AndroidClipboard 才能查询内容类型。
     @SuppressLint("VisibleForTests")
@@ -57,7 +57,7 @@ internal class VaultClipboard(private val context: Context, private val scope: C
      * 复制文本，敏感条目使用独立标识和过期计时。
      * @param text 待复制内容
      * @param sensitive 内容是否为密码
-     * @param showToast 是否在旧版系统显示复制反馈
+     * @param showToast 是否显示复制反馈
      */
     fun copy(text: String, sensitive: Boolean, showToast: Boolean = true) {
         copyClip(ClipData.newPlainText("", text), sensitive, showToast)
@@ -67,7 +67,7 @@ internal class VaultClipboard(private val context: Context, private val scope: C
      * 写入剪贴板并跟踪敏感条目的过期时间。
      * @param clip 待写入条目
      * @param sensitive 是否添加敏感标记
-     * @param showToast 是否在旧版系统显示复制反馈
+     * @param showToast 是否显示复制反馈
      */
     private fun copyClip(clip: ClipData, sensitive: Boolean, showToast: Boolean) {
         val stamp = if (sensitive) PendingClip(UUID.randomUUID().toString(), SystemClock.elapsedRealtime() + Timeout) else null
@@ -78,14 +78,15 @@ internal class VaultClipboard(private val context: Context, private val scope: C
             }
         }
         clipboard.setPrimaryClip(clip)
-        if (showToast && Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
-            Toast.makeText(context, R.string.vault_copied, Toast.LENGTH_SHORT).show()
-        }
         pending = stamp
         timer?.cancel()
         timer = if (stamp == null) null else scope.launch {
             delay((stamp.expiresAt - SystemClock.elapsedRealtime()).coerceAtLeast(0))
             clearExpired()
+        }
+        if (showToast) {
+            copyToast?.cancel()
+            copyToast = Toast.makeText(context, R.string.vault_copied, Toast.LENGTH_SHORT).also(Toast::show)
         }
     }
 

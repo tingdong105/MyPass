@@ -183,7 +183,7 @@ private fun GeneratorPanel(
                 GeneratorActionButton(
                     R.string.vault_copy_action, enabled = resultAvailable,
                     modifier = Modifier.weight(1f), primary = true,
-                    icon = { GeneratorCopyIcon(copyVersion) },
+                    icon = { VaultCopyIcon(copyVersion) },
                 ) { onCopy(state.password) }
             }
         }

@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
@@ -29,6 +30,8 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -36,7 +39,9 @@ import androidx.compose.ui.unit.dp
 import com.winter.mypass.R
 import com.winter.mypass.feature.home.model.CategoryKind
 import com.winter.mypass.feature.home.model.PasswordDraft
+import com.winter.mypass.feature.home.model.PasswordPreviewSettings
 import com.winter.mypass.feature.home.model.PasswordSummary
+import com.winter.mypass.feature.home.model.PasswordVisibility
 import com.winter.mypass.feature.home.model.VaultCategory
 import com.winter.mypass.feature.home.model.VaultOrder
 import com.winter.mypass.feature.home.model.VaultProblem
@@ -50,6 +55,7 @@ import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Checkbox
 import top.yukonga.miuix.kmp.basic.DropdownDefaults
+import top.yukonga.miuix.kmp.basic.DropdownImpl
 import top.yukonga.miuix.kmp.basic.HorizontalDivider
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.ListPopupColumn
@@ -63,8 +69,10 @@ import top.yukonga.miuix.kmp.icon.extended.Add
 import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.icon.extended.Folder
 import top.yukonga.miuix.kmp.icon.extended.Layers
+import top.yukonga.miuix.kmp.icon.extended.Lock
 import top.yukonga.miuix.kmp.icon.extended.More
 import top.yukonga.miuix.kmp.icon.extended.Pin
+import top.yukonga.miuix.kmp.icon.extended.Show
 import top.yukonga.miuix.kmp.icon.extended.Sort
 import top.yukonga.miuix.kmp.overlay.OverlayBottomSheet
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
@@ -125,7 +133,7 @@ internal fun SortMenu(
                         VaultOrder.Name -> R.string.vault_sort_name
                     }
                     val selected = sort.order == order
-                    SortPopupRow(
+                    VaultPopupChoice(
                         stringResource(label), busy,
                         Modifier.selectable(selected, enabled = !busy, role = Role.RadioButton) {
                             if (!selected) onSort(sort.copy(order = order))
@@ -134,7 +142,7 @@ internal fun SortMenu(
                     )
                 }
                 VaultRowDivider()
-                SortPopupRow(
+                VaultPopupChoice(
                     stringResource(R.string.vault_reverse), busy,
                     Modifier.toggleable(sort.reversed, enabled = !busy, role = Role.Checkbox) {
                         onSort(sort.copy(reversed = it))
@@ -147,14 +155,14 @@ internal fun SortMenu(
 }
 
 /**
- * 紧凑的排序菜单行，左侧显示文字，右侧显示选中状态。
+ * 紧凑的下拉菜单行，左侧显示文字，右侧显示选中状态。
  * @param label 行标题
- * @param busy 是否正在保存排序设置
+ * @param busy 是否正在保存设置
  * @param interaction 行的点击行为及无障碍状态
  * @param selected 是否显示选中状态
  */
 @Composable
-private fun SortPopupRow(
+private fun VaultPopupChoice(
     label: String,
     busy: Boolean,
     interaction: Modifier,
@@ -428,17 +436,148 @@ private fun CategoryRow(
 }
 
 /**
- * 设置页只放当前提供的分类入口。
+ * 提供密码预览设置和分类管理入口。
+ * @param preview 当前显示模式与遮罩符号
+ * @param busy 是否正在保存设置
+ * @param onPasswordPreview 保存预览设置
  * @param onManage 打开对应分类
  */
 @Composable
-internal fun VaultSettings(onManage: (CategoryKind) -> Unit) {
+internal fun VaultSettings(
+    preview: PasswordPreviewSettings,
+    busy: Boolean,
+    onPasswordPreview: (PasswordPreviewSettings) -> Unit,
+    onManage: (CategoryKind) -> Unit,
+) {
+    var choosingSymbol by remember { mutableStateOf(false) }
+    var customSymbol by remember { mutableStateOf<String?>(null) }
+    val symbolTitle = stringResource(R.string.vault_mask_symbol)
+    Column(verticalArrangement = Arrangement.spacedBy(Theme.spacing.small)) {
+        Text(
+            stringResource(R.string.vault_style_settings),
+            Modifier.padding(horizontal = Theme.spacing.medium).semantics { heading() },
+            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            style = MiuixTheme.textStyles.body2,
+        )
+        VaultGroup {
+            PasswordVisibilityMenu(preview.visibility, busy) { onPasswordPreview(preview.copy(visibility = it)) }
+            VaultRowDivider()
+            VaultLink(symbolTitle, enabled = !busy, icon = MiuixIcons.Lock, value = preview.symbol) {
+                customSymbol = preview.symbol.takeUnless {
+                    it == PasswordPreviewSettings.Asterisk || it == PasswordPreviewSettings.Dot
+                }
+                choosingSymbol = true
+            }
+        }
+    }
     VaultGroup {
-        VaultLink(stringResource(R.string.vault_manage_tags), icon = MiuixIcons.Pin) { onManage(CategoryKind.Tag) }
+        VaultLink(stringResource(R.string.vault_manage_tags), enabled = !busy, icon = MiuixIcons.Pin) {
+            onManage(CategoryKind.Tag)
+        }
         VaultRowDivider()
-        VaultLink(stringResource(R.string.vault_manage_types), icon = MiuixIcons.Layers) { onManage(CategoryKind.Type) }
+        VaultLink(stringResource(R.string.vault_manage_types), enabled = !busy, icon = MiuixIcons.Layers) {
+            onManage(CategoryKind.Type)
+        }
+    }
+    OverlayDialog(choosingSymbol, title = symbolTitle, onDismissRequest = { choosingSymbol = false }) {
+        Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+            Column(Modifier.selectableGroup()) {
+                val presets = listOf(
+                    R.string.vault_mask_asterisk to PasswordPreviewSettings.Asterisk,
+                    R.string.vault_mask_dot to PasswordPreviewSettings.Dot,
+                )
+                for ((label, symbol) in presets) {
+                    VaultChoice(
+                        stringResource(label, symbol), selected = customSymbol == null && preview.symbol == symbol,
+                        enabled = !busy,
+                    ) {
+                        choosingSymbol = false
+                        onPasswordPreview(preview.copy(symbol = symbol))
+                    }
+                }
+                VaultChoice(
+                    stringResource(R.string.vault_mask_custom), selected = customSymbol != null, enabled = !busy,
+                ) {
+                    if (customSymbol == null) customSymbol = ""
+                }
+            }
+            customSymbol?.let { symbol ->
+                val valid = PasswordPreviewSettings.isValidSymbol(symbol)
+                Column(
+                    modifier = Modifier.padding(top = Theme.spacing.small),
+                    verticalArrangement = Arrangement.spacedBy(Theme.spacing.small),
+                ) {
+                    TextField(
+                        symbol, { customSymbol = it },
+                        Modifier.fillMaxWidth(), label = stringResource(R.string.vault_mask_symbol_hint),
+                        enabled = !busy, singleLine = true,
+                    )
+                    if (symbol.isNotEmpty() && !valid) Text(
+                        stringResource(R.string.vault_mask_symbol_invalid),
+                        color = MiuixTheme.colorScheme.error, style = MiuixTheme.textStyles.body2,
+                    )
+                    TextButton(
+                        stringResource(R.string.vault_save), enabled = valid && !busy,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.textButtonColorsPrimary(),
+                        onClick = {
+                            choosingSymbol = false
+                            onPasswordPreview(preview.copy(symbol = symbol))
+                        },
+                    )
+                }
+            }
+        }
     }
 }
+
+/**
+ * 在密码显示设置行的右侧展开单选菜单。
+ * @param visibility 当前显示模式
+ * @param busy 是否正在保存
+ * @param onSelect 应用菜单选项
+ */
+@Composable
+private fun PasswordVisibilityMenu(
+    visibility: PasswordVisibility,
+    busy: Boolean,
+    onSelect: (PasswordVisibility) -> Unit,
+) {
+    var show by remember { mutableStateOf(false) }
+    Box {
+        VaultLink(
+            stringResource(R.string.vault_password_visibility), enabled = !busy,
+            icon = MiuixIcons.Show, value = stringResource(visibility.label),
+        ) { show = true }
+        OverlayListPopup(
+            show = show, alignment = PopupPositionProvider.Align.End,
+            enableWindowDim = true, onDismissRequest = { show = false },
+        ) {
+            ListPopupColumn {
+                PasswordVisibility.entries.forEachIndexed { index, mode ->
+                    DropdownImpl(
+                        text = stringResource(mode.label),
+                        optionSize = PasswordVisibility.entries.size,
+                        isSelected = mode == visibility, index = index, enabled = !busy,
+                        onSelectedIndexChange = {
+                            show = false
+                            if (mode != visibility) onSelect(mode)
+                        },
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** 密码显示模式对应的本地化名称。 */
+@get:StringRes
+private val PasswordVisibility.label: Int
+    get() = when (this) {
+        PasswordVisibility.Full -> R.string.vault_password_visibility_full
+        PasswordVisibility.Partial -> R.string.vault_password_visibility_partial
+        PasswordVisibility.Hidden -> R.string.vault_password_visibility_hidden
+    }
 
 /**
  * 作为一个可点击复选项显示行与勾选控件。
@@ -491,14 +630,16 @@ private fun categoryTitle(kind: CategoryKind): Int = when (kind) {
  */
 internal fun previewEntry(): PasswordDraft = PasswordDraft(
     bookId = 1, id = 1, platform = "GitHub", account = "winter@example.com", password = "preview-secret",
-    website = "https://github.com", notes = "个人代码仓库", typeId = 2, tagIds = setOf(1L),
+    website = "https://github.com", email = "mail@example.com",
+    notes = "个人代码仓库", typeId = 2, tagIds = setOf(1L),
 )
 
 /**
  * 提供多本、多类型的预览数据。
+ * @param preview 预览中使用的密码显示与遮罩设置
  * @return 密码本预览快照
  */
-internal fun previewSnapshot(): VaultSnapshot {
+internal fun previewSnapshot(preview: PasswordPreviewSettings = PasswordPreviewSettings()): VaultSnapshot {
     val work = VaultCategory(1, "工作", 2)
     return VaultSnapshot(
         books = listOf(VaultCategory(1, "个人密码本", 5), VaultCategory(2, "工作密码本", 0)),
@@ -506,11 +647,11 @@ internal fun previewSnapshot(): VaultSnapshot {
         types = listOf(VaultCategory(1, "APP", 2), VaultCategory(2, "Web", 3)),
         bookId = 1,
         passwords = listOf(
-            PasswordSummary(1, 1, "GitHub", "winter@example.com", "https://github.com", 2, 0, 5),
-            PasswordSummary(2, 1, "微信", "tingdong", null, 1, 0, 4),
-            PasswordSummary(3, 1, "Notion", "winter@example.com", "https://notion.com", 2, 0, 3),
-            PasswordSummary(4, 1, "哔哩哔哩", "听冬酱", null, 1, 0, 2),
-            PasswordSummary(5, 1, "豆瓣", "winter@example.com", "https://douban.com", 2, 0, 1),
+            PasswordSummary(1, 1, "GitHub", "winter@example.com", "https://github.com", 2, 0, 5, preview.display("preview-secret")),
+            PasswordSummary(2, 1, "微信", "tingdong", null, 1, 0, 4, preview.display("W8-68!")),
+            PasswordSummary(3, 1, "Notion", "winter@example.com", "https://notion.com", 2, 0, 3, preview.display("notes#636")),
+            PasswordSummary(4, 1, "哔哩哔哩", "听冬酱", null, 1, 0, 2, preview.display("bili-2468")),
+            PasswordSummary(5, 1, "豆瓣", null, "https://douban.com", 2, 0, 1, preview.display("bd")),
         ),
         tagsByPassword = mapOf(1L to listOf(work), 3L to listOf(work)),
     )

@@ -39,7 +39,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
@@ -59,23 +59,26 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.hideFromAccessibility
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.winter.mypass.R
 import com.winter.mypass.feature.home.model.CategoryKind
+import com.winter.mypass.feature.home.model.PasswordPreviewSettings
 import com.winter.mypass.feature.home.model.PasswordSummary
-import com.winter.mypass.feature.home.model.VaultCategory
 import com.winter.mypass.feature.home.model.VaultSnapshot
 import com.winter.mypass.feature.home.model.VaultSort
+import com.winter.mypass.feature.home.viewmodel.DetailPhase
 import com.winter.mypass.feature.home.viewmodel.GeneratorOptions
 import com.winter.mypass.feature.home.viewmodel.VaultPage
 import com.winter.mypass.feature.home.viewmodel.VaultState
@@ -83,7 +86,7 @@ import com.winter.mypass.feature.home.viewmodel.VaultTab
 import com.winter.mypass.feature.home.viewmodel.VaultViewModel
 import com.winter.mypass.ui.theme.MyPassTheme
 import com.winter.mypass.ui.theme.Theme
-import top.yukonga.miuix.kmp.basic.BasicComponent
+import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CircularProgressIndicator
 import top.yukonga.miuix.kmp.basic.FloatingActionButton
 import top.yukonga.miuix.kmp.basic.HorizontalDivider
@@ -100,30 +103,29 @@ import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.basic.VerticalDivider
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Add
+import top.yukonga.miuix.kmp.icon.extended.ChevronForward
 import top.yukonga.miuix.kmp.icon.extended.Close
-import top.yukonga.miuix.kmp.icon.extended.Copy
 import top.yukonga.miuix.kmp.icon.extended.Folder
 import top.yukonga.miuix.kmp.icon.extended.FolderFill
 import top.yukonga.miuix.kmp.icon.extended.Search
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import top.yukonga.miuix.kmp.utils.PressFeedbackType
 
 /**
  * 密码本导航使用独立的页面标识，草稿和搜索变化不触发转场。
  * @author Tingdong
  * @date 2026-11-19
  */
-private enum class Destination(val depth: Int) { Loading(0), Tabs(0), Catalog(1), Detail(1) }
+private enum class Destination(val depth: Int) { Loading(0), Tabs(0), Catalog(1) }
 
 /**
  * 根据当前状态确定转场的目的地。
  * @receiver 当前会话状态
  */
 private val VaultState.destination: Destination
-    get() = if (snapshot == null) Destination.Loading else when (val currentPage = page) {
+    get() = if (snapshot == null) Destination.Loading else when (page) {
         is VaultPage.Categories -> Destination.Catalog
-        is VaultPage.Detail -> Destination.Detail
-        is VaultPage.Editor -> if (currentPage.original.id == null) Destination.Tabs else Destination.Detail
-        null -> Destination.Tabs
+        else -> Destination.Tabs
     }
 
 /**
@@ -135,12 +137,16 @@ internal fun VaultScreen(model: VaultViewModel) {
     val state by model.state.collectAsStateWithLifecycle()
     val list = remember { LazyListState() }
     val focus = LocalFocusManager.current
-    val editorOpen = state.page is VaultPage.Editor
-    LaunchedEffect(editorOpen) {
-        if (editorOpen) focus.clearFocus(force = true)
+    val modalOpen = state.page is VaultPage.Editor || state.page is VaultPage.Detail
+    LaunchedEffect(modalOpen) {
+        if (modalOpen) focus.clearFocus(force = true)
     }
-    // 退场期间保留当前返回目标。
-    BackHandler(enabled = (state.page as? VaultPage.Editor)?.phase?.isClosing == true) { }
+    val sheetClosing = when (val page = state.page) {
+        is VaultPage.Detail -> page.phase != DetailPhase.Open
+        is VaultPage.Editor -> page.phase.isClosing
+        else -> false
+    }
+    BackHandler(enabled = sheetClosing) { }
     LaunchedEffect(state.snapshot?.bookId, state.query, state.sort) {
         if (state.snapshot != null) list.scrollToItem(0)
     }
@@ -167,44 +173,58 @@ internal fun VaultScreen(model: VaultViewModel) {
         if (snapshot == null) {
             VaultLoading(screen, model::load)
         } else {
-            val editor = page as? VaultPage.Editor
-            val detail = when (page) {
-                is VaultPage.Detail -> page.draft
-                is VaultPage.Editor -> page.original.takeIf { it.id != null }
-                else -> null
-            }
-            val overlays: @Composable () -> Unit = {
-                if (active && editor != null) {
-                    PasswordFormSheet(
-                        editor = editor,
-                        snapshot = snapshot,
-                        busy = screen.busy,
-                        problem = screen.problem,
-                        passwordClipboard = model.passwordEditorClipboard,
-                        onDraft = model::editDraft,
-                        onSave = model::savePassword,
-                        onDismiss = model::dismissPasswordEditor,
-                        onDismissFinished = model::finishPasswordEditorDismissal,
-                        onDiscard = model::confirmPasswordDiscard,
-                        onClearProblem = model::clearProblem,
-                    )
-                }
-            }
-            when {
-                detail != null -> PasswordDetail(
-                    detail, snapshot, screen.busy, screen.problem.takeIf { editor == null },
-                    active && editor == null, model::closePage, model::editPassword, model::deletePassword,
-                    model::copyText, overlays,
-                )
-                page is VaultPage.Categories -> CategoryScreen(
+            if (page is VaultPage.Categories) {
+                CategoryScreen(
                     page.kind, snapshot.categories(page.kind), screen.busy, screen.problem, active,
                     model::closePage, model::clearProblem, model::saveCategory, model::deleteCategory,
                 )
-                else -> VaultTopLevel(
-                    screen, snapshot, list, active && page == null, model::selectTab, model::selectBook, model::manage, model::search,
-                    model::sort, model::clearProblem, model::openDetail, model::copyPassword, model::newPassword,
-                    model::generatorOptions, model::refreshGeneratedPassword, model::copyGenerated, overlays,
-                )
+            } else {
+                VaultTopLevel(
+                    state = screen,
+                    snapshot = snapshot,
+                    list = list,
+                    active = active && page == null,
+                    onTab = model::selectTab,
+                    onBook = model::selectBook,
+                    onManage = model::manage,
+                    onQuery = model::search,
+                    onSort = model::sort,
+                    onPasswordPreview = model::setPasswordPreview,
+                    onClear = model::clearProblem,
+                    onOpen = model::openDetail,
+                    onAdd = model::newPassword,
+                    onGeneratorOptions = model::generatorOptions,
+                    onRefreshGenerated = model::refreshGeneratedPassword,
+                    onCopyGenerated = model::copyGenerated,
+                ) {
+                    if (active) when (page) {
+                        is VaultPage.Detail -> PasswordDetailSheet(
+                            detail = page,
+                            snapshot = snapshot,
+                            busy = screen.busy,
+                            problem = screen.problem,
+                            onDismiss = model::dismissPasswordDetail,
+                            onDismissFinished = model::finishPasswordDetailDismissal,
+                            onEdit = model::editPassword,
+                            onDelete = model::deletePassword,
+                            onCopy = model::copyText,
+                        )
+                        is VaultPage.Editor -> PasswordFormSheet(
+                            editor = page,
+                            snapshot = snapshot,
+                            busy = screen.busy,
+                            problem = screen.problem,
+                            passwordClipboard = model.passwordEditorClipboard,
+                            onDraft = model::editDraft,
+                            onSave = model::savePassword,
+                            onDismiss = model::dismissPasswordEditor,
+                            onDismissFinished = model::finishPasswordEditorDismissal,
+                            onDiscard = model::confirmPasswordDiscard,
+                            onClearProblem = model::clearProblem,
+                        )
+                        else -> Unit
+                    }
+                }
             }
         }
     }
@@ -239,9 +259,9 @@ private fun VaultLoading(state: VaultState, retry: () -> Unit) {
  * @param onManage 打开分类管理
  * @param onQuery 修改搜索词
  * @param onSort 修改排序
+ * @param onPasswordPreview 修改密码预览设置
  * @param onClear 清除错误反馈
  * @param onOpen 查看一条记录
- * @param onCopy 复制一条密码
  * @param onAdd 新建记录
  * @param onGeneratorOptions 修改生成参数
  * @param onRefreshGenerated 使用当前参数生成新密码
@@ -260,9 +280,9 @@ private fun VaultTopLevel(
     onManage: (CategoryKind) -> Unit,
     onQuery: (String) -> Unit,
     onSort: (VaultSort) -> Unit,
+    onPasswordPreview: (PasswordPreviewSettings) -> Unit,
     onClear: () -> Unit,
     onOpen: (Long) -> Unit,
-    onCopy: (Long) -> Unit,
     onAdd: (String) -> Unit,
     onGeneratorOptions: (GeneratorOptions) -> Unit,
     onRefreshGenerated: () -> Unit,
@@ -272,8 +292,8 @@ private fun VaultTopLevel(
     var drawer by remember { mutableStateOf(false) }
     val keyboard = WindowInsets.isImeVisible
     val tabSlideDistance = with(LocalDensity.current) { 64.dp.roundToPx() }
-    val editorOpen = state.page is VaultPage.Editor
-    val background = if (editorOpen) Modifier.blockVaultBackgroundFocus() else Modifier
+    val modalOpen = state.page is VaultPage.Editor || state.page is VaultPage.Detail
+    val background = if (modalOpen) Modifier.blockVaultBackgroundFocus() else Modifier
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val docked = maxWidth >= VaultLayout.DockedSidebarBreakpoint
         val home = state.tab == VaultTab.Home
@@ -380,7 +400,7 @@ private fun VaultTopLevel(
                                     actions = sortAction,
                                 )
                                 PasswordList(
-                                    state, snapshot, list, Modifier.fillMaxWidth().weight(1f), onQuery, onOpen, onCopy,
+                                    state, snapshot, list, Modifier.fillMaxWidth().weight(1f), onQuery, onOpen,
                                 )
                             }
                         }
@@ -392,14 +412,15 @@ private fun VaultTopLevel(
                             )
                         }
                         VaultTab.Settings -> VaultColumn(body, horizontalPadding = Theme.spacing.medium) {
-                            VaultSettings(onManage)
+                            VaultErrorText(state.problem)
+                            VaultSettings(state.passwordPreview, state.busy, onPasswordPreview, onManage)
                         }
                     }
                 }
             }
             overlays()
         }
-        if (!docked && home && !editorOpen) BookDrawer(
+        if (!docked && home && !modalOpen) BookDrawer(
             drawerVisible, snapshot, state.busy, onDismiss = { drawer = false },
             onSelect = {
                 drawer = false
@@ -486,7 +507,6 @@ private fun VaultNavigation(tab: VaultTab, onTab: (VaultTab) -> Unit, modifier: 
  * @param modifier 列表区域
  * @param onQuery 修改当前搜索
  * @param onOpen 打开详情
- * @param onCopy 单条复制
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -497,7 +517,6 @@ private fun PasswordList(
     modifier: Modifier,
     onQuery: (String) -> Unit,
     onOpen: (Long) -> Unit,
-    onCopy: (Long) -> Unit,
 ) {
     val focus = LocalFocusManager.current
     val locale = LocalConfiguration.current.locales[0]
@@ -523,13 +542,17 @@ private fun PasswordList(
             LazyColumn(
                 modifier = Modifier.fillMaxWidth().weight(1f),
                 state = list,
-                contentPadding = PaddingValues(bottom = when {
-                    entries.isEmpty() -> 0.dp
-                    keyboard -> Theme.spacing.medium
-                    else -> 88.dp
-                }),
+                verticalArrangement = Arrangement.spacedBy(Theme.spacing.small),
+                contentPadding = PaddingValues(
+                    top = if (entries.isEmpty()) 0.dp else Theme.spacing.medium,
+                    bottom = when {
+                        entries.isEmpty() -> 0.dp
+                        keyboard -> Theme.spacing.medium
+                        else -> 88.dp
+                    },
+                ),
             ) {
-                if (state.problem != null) item(key = "error") {
+                if (state.page == null && state.problem != null) item(key = "error") {
                     Box(Modifier.padding(top = Theme.spacing.medium)) { VaultErrorText(state.problem) }
                 }
                 if (entries.isEmpty()) {
@@ -552,18 +575,14 @@ private fun PasswordList(
                         }
                     }
                 } else {
-                    item(key = "count") {
-                        Text(
-                            pluralStringResource(R.plurals.vault_record_count, entries.size, entries.size),
-                            Modifier.padding(top = Theme.spacing.large, bottom = Theme.spacing.small),
-                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary, style = MiuixTheme.textStyles.body2,
-                        )
-                    }
-                    itemsIndexed(entries, key = { _, entry -> entry.id }) { index, entry ->
-                        if (index > 0) HorizontalDivider(Modifier.padding(start = 54.dp))
-                        PasswordListRow(
-                            entry, snapshot, !state.busy && state.page == null,
-                            { onOpen(entry.id) }, { onCopy(entry.id) },
+                    items(entries, key = { it.id }) { entry ->
+                        PasswordListCard(
+                            entry = entry,
+                            enabled = !state.busy && state.page == null,
+                            onOpen = {
+                                focus.clearFocus()
+                                onOpen(entry.id)
+                            },
                         )
                     }
                 }
@@ -573,39 +592,46 @@ private fun PasswordList(
 }
 
 /**
- * 记录行保留整个标题区域的查看操作与独立复制操作。
+ * 用原生按压卡片显示平台、密码与用户名。
  * @param entry 当前记录摘要
- * @param snapshot 用于显示分类名称
  * @param enabled 当前是否可以操作
  * @param onOpen 打开详情
- * @param onCopy 复制密码
  */
 @Composable
-private fun PasswordListRow(
+private fun PasswordListCard(
     entry: PasswordSummary,
-    snapshot: VaultSnapshot,
     enabled: Boolean,
     onOpen: () -> Unit,
-    onCopy: () -> Unit,
 ) {
     val colors = MiuixTheme.colorScheme
-    val labels = listOfNotNull(snapshot.typeName(entry.typeId)) +
-        snapshot.tagsByPassword[entry.id].orEmpty().map(VaultCategory::name)
-    BasicComponent(
-        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(13.dp)),
-        enabled = enabled, onClick = onOpen,
-        insideMargin = PaddingValues(top = Theme.spacing.small, bottom = Theme.spacing.small),
-        startAction = { VaultGlyph(entry.platform) },
-        endActions = { VaultIcon(MiuixIcons.Copy, R.string.vault_copy_password, enabled, onClick = onCopy) },
+    Card(
+        modifier = Modifier.fillMaxWidth().semantics { if (!enabled) disabled() },
+        insideMargin = PaddingValues(Theme.spacing.medium),
+        pressFeedbackType = PressFeedbackType.Sink,
+        showIndication = true,
+        onClick = { if (enabled) onOpen() },
     ) {
-        Text(entry.platform, style = MiuixTheme.textStyles.title4, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        entry.account?.let { account ->
-            Text(account, style = MiuixTheme.textStyles.body2, color = colors.onSurfaceVariantSummary, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(Theme.spacing.medium),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            VaultGlyph(entry.platform)
+            Column(Modifier.weight(1f)) {
+                Text(entry.platform, style = MiuixTheme.textStyles.title3, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(
+                    entry.passwordPreview.orEmpty(),
+                    style = MiuixTheme.textStyles.body1, fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Medium,
+                )
+                if (!entry.account.isNullOrBlank()) Text(
+                    entry.account, modifier = Modifier.padding(top = Theme.spacing.small / 2),
+                    style = MiuixTheme.textStyles.body2, color = colors.onSurfaceVariantSummary,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
+            }
+            Icon(MiuixIcons.ChevronForward, null, Modifier.size(Theme.spacing.medium), tint = colors.onSurfaceVariantSummary)
         }
-        if (labels.isNotEmpty()) Text(
-            labels.joinToString("  "), style = MiuixTheme.textStyles.body2,
-            color = colors.onSurfaceVariantSummary, maxLines = 1, overflow = TextOverflow.Ellipsis,
-        )
     }
 }
 
@@ -682,7 +708,7 @@ private fun BookSidebar(
             if (onDismiss != null) VaultIcon(MiuixIcons.Close, R.string.vault_close, onClick = onDismiss)
         }
         LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Theme.spacing.small)) {
-            itemsIndexed(snapshot.books, key = { _, book -> book.id }) { _, book ->
+            items(snapshot.books, key = { it.id }) { book ->
                 val selected = book.id == snapshot.bookId
                 val tint = colors.onSurface
                 Row(
@@ -710,7 +736,7 @@ private fun BookSidebar(
  */
 @Composable
 internal fun VaultTabbedPreview(state: VaultState) {
-    val snapshot = state.snapshot ?: previewSnapshot()
+    val snapshot = state.snapshot ?: previewSnapshot(state.passwordPreview)
     MyPassTheme {
         VaultTopLevel(
             state.copy(snapshot = snapshot), snapshot, remember { LazyListState() }, true,

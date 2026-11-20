@@ -5,7 +5,6 @@ import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.ScrollState
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -80,7 +79,9 @@ import top.yukonga.miuix.kmp.basic.TextFieldDefaults
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.ChevronForward
 import top.yukonga.miuix.kmp.icon.extended.Folder
+import top.yukonga.miuix.kmp.icon.extended.Hide
 import top.yukonga.miuix.kmp.icon.extended.Layers
+import top.yukonga.miuix.kmp.icon.extended.Show
 import top.yukonga.miuix.kmp.overlay.OverlayBottomSheet
 import top.yukonga.miuix.kmp.squircle.squircleSurface
 import top.yukonga.miuix.kmp.theme.MiuixTheme
@@ -406,13 +407,7 @@ private fun TagField(
                         horizontalArrangement = Arrangement.spacedBy(Theme.spacing.small / 2),
                     ) {
                         for (tag in tags) {
-                            Text(
-                                tag.name,
-                                Modifier.background(colors.tertiaryContainer, RoundedCornerShape(percent = 50))
-                                    .padding(horizontal = Theme.spacing.small, vertical = Theme.spacing.small / 2),
-                                color = colors.onSurface, style = MiuixTheme.textStyles.body2,
-                                maxLines = 1, overflow = TextOverflow.Ellipsis,
-                            )
+                            VaultTagChip(tag.name)
                         }
                     }
                 }
@@ -451,7 +446,13 @@ private fun PasswordFormInput(
             value, onValueChange, modifier, colors = colors, hint = R.string.vault_password_hint, enabled = enabled,
             visualTransformation = if (revealed) VisualTransformation.None else PasswordVisualTransformation(),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false, imeAction = imeAction),
-            trailingIcon = { PasswordEye(revealed, enabled) { revealed = !revealed } },
+            trailingIcon = {
+                VaultIcon(
+                    if (revealed) MiuixIcons.Hide else MiuixIcons.Show,
+                    if (revealed) R.string.vault_hide else R.string.vault_show,
+                    enabled,
+                ) { revealed = !revealed }
+            },
         )
     }
 }

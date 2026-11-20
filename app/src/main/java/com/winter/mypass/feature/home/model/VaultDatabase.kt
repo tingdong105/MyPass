@@ -106,13 +106,25 @@ internal interface VaultDao {
     suspend fun types(): List<VaultCategory>
 
     /**
-     * 读取指定密码本中可搜索的记录摘要。
+     * 读取可搜索的摘要，以及预览所需的密码或字符数。
+     * @param bookId 当前密码本
+     * @param includePassword 是否随摘要读取原密码
+     * @param includePasswordLength 是否读取全隐藏所需的字符数
+     * @return 该密码本的记录摘要
      */
     @Query("""
-        SELECT id, bookId, platform, account, website, typeId, createdAt, updatedAt
+        SELECT id, bookId, platform, account, website, typeId, createdAt, updatedAt,
+               CASE WHEN :includePassword OR (:includePasswordLength AND instr(password, char(0)) > 0)
+                    THEN password END AS passwordPreview,
+               CASE WHEN :includePasswordLength AND instr(password, char(0)) = 0
+                    THEN length(password) END AS passwordLength
         FROM vault_passwords WHERE bookId = :bookId
     """)
-    suspend fun summaries(bookId: Long): List<PasswordSummary>
+    suspend fun summaries(
+        bookId: Long,
+        includePassword: Boolean,
+        includePasswordLength: Boolean = false,
+    ): List<PasswordSummary>
 
     /**
      * 读取指定密码本的记录与标签关联。
@@ -128,12 +140,6 @@ internal interface VaultDao {
      */
     @Query("SELECT * FROM vault_passwords WHERE id = :id")
     suspend fun entry(id: Long): VaultPassword?
-
-    /**
-     * 仅在复制时读取指定记录的密码。
-     */
-    @Query("SELECT password FROM vault_passwords WHERE id = :id")
-    suspend fun password(id: Long): String?
 
     /**
      * 读取单条记录的标签标识。
