@@ -1,5 +1,6 @@
 package com.winter.mypass.feature.home.view
 
+import android.view.HapticFeedbackConstants
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedContentTransitionScope.SlideDirection
@@ -59,6 +60,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.semantics.Role
@@ -116,7 +118,7 @@ import top.yukonga.miuix.kmp.utils.PressFeedbackType
  * @author Tingdong
  * @date 2026-11-19
  */
-private enum class Destination(val depth: Int) { Loading(0), Tabs(0), Catalog(1) }
+private enum class Destination(val depth: Int) { Loading(0), Tabs(0), Catalog(1), GenerationHistory(1) }
 
 /**
  * 根据当前状态确定转场的目的地。
@@ -125,6 +127,7 @@ private enum class Destination(val depth: Int) { Loading(0), Tabs(0), Catalog(1)
 private val VaultState.destination: Destination
     get() = if (snapshot == null) Destination.Loading else when (page) {
         is VaultPage.Categories -> Destination.Catalog
+        is VaultPage.GenerationHistory -> Destination.GenerationHistory
         else -> Destination.Tabs
     }
 
@@ -178,6 +181,17 @@ internal fun VaultScreen(model: VaultViewModel) {
                     page.kind, snapshot.categories(page.kind), screen.busy, screen.problem, active,
                     model::closePage, model::clearProblem, model::saveCategory, model::deleteCategory,
                 )
+            } else if (page is VaultPage.GenerationHistory) {
+                GeneratorHistoryScreen(
+                    entries = page.entries,
+                    busy = screen.busy,
+                    problem = screen.problem,
+                    active = active,
+                    onBack = model::closePage,
+                    onRetry = model::loadGenerationHistory,
+                    onCopy = model::copyFromGenerationHistory,
+                    onDelete = model::deleteFromGenerationHistory,
+                )
             } else {
                 VaultTopLevel(
                     state = screen,
@@ -196,6 +210,7 @@ internal fun VaultScreen(model: VaultViewModel) {
                     onGeneratorOptions = model::generatorOptions,
                     onRefreshGenerated = model::refreshGeneratedPassword,
                     onCopyGenerated = model::copyGenerated,
+                    onOpenGenerationHistory = model::openGenerationHistory,
                 ) {
                     if (active) when (page) {
                         is VaultPage.Detail -> PasswordDetailSheet(
@@ -266,6 +281,7 @@ private fun VaultLoading(state: VaultState, retry: () -> Unit) {
  * @param onGeneratorOptions 修改生成参数
  * @param onRefreshGenerated 使用当前参数生成新密码
  * @param onCopyGenerated 复制生成结果并在成功后确认
+ * @param onOpenGenerationHistory 打开复制历史
  * @param overlays 挂载到顶层 Scaffold 的浮层
  */
 @OptIn(ExperimentalLayoutApi::class)
@@ -287,6 +303,7 @@ private fun VaultTopLevel(
     onGeneratorOptions: (GeneratorOptions) -> Unit,
     onRefreshGenerated: () -> Unit,
     onCopyGenerated: (String, () -> Unit) -> Unit,
+    onOpenGenerationHistory: () -> Unit,
     overlays: @Composable () -> Unit = {},
 ) {
     var drawer by remember { mutableStateOf(false) }
@@ -355,7 +372,21 @@ private fun VaultTopLevel(
                             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
                                 val header = Modifier.widthIn(max = VaultLayout.PaneWidth).fillMaxWidth()
                                 if (generatorScroll != null) {
-                                    TopAppBar(title = heading, modifier = header, scrollBehavior = generatorScroll)
+                                    TopAppBar(
+                                        title = heading, modifier = header, scrollBehavior = generatorScroll,
+                                        actions = {
+                                            val view = LocalView.current
+                                            VaultIcon(
+                                                ImageVector.vectorResource(R.drawable.ic_vault_generator_history),
+                                                R.string.vault_generator_history,
+                                                enabled = active && tab == state.tab && !state.busy,
+                                                iconSize = VaultLayout.HeaderIconSize,
+                                            ) {
+                                                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                                                onOpenGenerationHistory()
+                                            }
+                                        },
+                                    )
                                 } else {
                                     VaultTabHeader(
                                         title = heading,
@@ -740,7 +771,7 @@ internal fun VaultTabbedPreview(state: VaultState) {
     MyPassTheme {
         VaultTopLevel(
             state.copy(snapshot = snapshot), snapshot, remember { LazyListState() }, true,
-            {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, { _, _ -> },
+            {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, { _, _ -> }, {},
         )
     }
 }

@@ -122,11 +122,24 @@
     <string name="vault_category_actions">More actions</string>
     <string name="vault_length">Length</string>
     <string name="vault_generator_title">Password generator</string>
+    <string name="vault_generator_history">Generator history</string>
+    <string name="vault_history_empty">No copied passwords yet</string>
+    <string name="vault_history_select_row">Select this entry</string>
+    <string name="vault_history_clear_selection">Exit selection</string>
+    <string name="vault_history_delete_title">Delete generator history</string>
     <string name="vault_letters">Letters</string>
     <string name="vault_copy_add_prompt">Copied. Add this password?</string>
     <string name="vault_confirm_add">Confirm</string>
     <string name="vault_refresh_password">Refresh</string>
     <string name="vault_copy_action">Copy</string>
+    <plurals name="vault_history_selected">
+        <item quantity="one">%d selected</item>
+        <item quantity="other">%d selected</item>
+    </plurals>
+    <plurals name="vault_history_delete_summary">
+        <item quantity="one">Delete the %d selected copy?</item>
+        <item quantity="other">Delete the %d selected copies?</item>
+    </plurals>
     <plurals name="vault_record_count">
         <item quantity="one">%d record</item>
         <item quantity="other">%d records</item>

@@ -60,6 +60,18 @@ internal class VaultPassword(
 )
 
 /**
+ * 加密库中的一次生成密码复制记录。
+ * @author Tingdong
+ * @date 2026-11-20
+ */
+@Entity(tableName = "vault_generated_password_copies")
+internal class GeneratedPasswordCopy(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val password: String,
+    val copiedAt: Long,
+)
+
+/**
  * 密码和标签的多对多关联。
  */
 @Entity(
@@ -78,6 +90,27 @@ internal data class PasswordTag(val passwordId: Long, val tagId: Long)
  */
 @Dao
 internal interface VaultDao {
+    /**
+     * 按复制顺序倒序读取生成历史。
+     * @return 当前生成历史
+     */
+    @Query("SELECT * FROM vault_generated_password_copies ORDER BY id DESC")
+    suspend fun generatedPasswordCopies(): List<GeneratedPasswordCopy>
+
+    /**
+     * 写入一条已成功复制的生成结果。
+     * @param entry 本次复制记录
+     */
+    @Insert
+    suspend fun insertGeneratedPasswordCopy(entry: GeneratedPasswordCopy)
+
+    /**
+     * 删除一批生成历史。
+     * @param ids 待删除的记录标识
+     */
+    @Query("DELETE FROM vault_generated_password_copies WHERE id IN (:ids)")
+    suspend fun deleteGeneratedPasswordCopies(ids: List<Long>)
+
     /**
      * 读取密码本和各本条目数。
      */
@@ -232,8 +265,11 @@ internal interface VaultDao {
  * @date 2026-11-19
  */
 @Database(
-    entities = [VaultBook::class, VaultTag::class, VaultType::class, VaultPassword::class, PasswordTag::class],
-    version = 3,
+    entities = [
+        VaultBook::class, VaultTag::class, VaultType::class, VaultPassword::class,
+        PasswordTag::class, GeneratedPasswordCopy::class,
+    ],
+    version = 4,
 )
 internal abstract class VaultDatabase : RoomDatabase() {
     /**

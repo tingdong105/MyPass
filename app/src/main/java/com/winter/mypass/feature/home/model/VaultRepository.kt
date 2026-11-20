@@ -9,7 +9,10 @@ import com.winter.mypass.core.utils.RoomUtils
  * @date 2026-11-19
  */
 internal class VaultRepository(context: Context, private val defaultBookName: String) {
-    private val storage = RoomUtils(context, VaultDatabase::class.java, DatabaseName, VaultMigration1To2, VaultMigration2To3)
+    private val storage = RoomUtils(
+        context, VaultDatabase::class.java, DatabaseName,
+        VaultMigration1To2, VaultMigration2To3, VaultMigration3To4,
+    )
 
     /**
      * 验证密钥，首次使用时初始化密码本和类型。
@@ -44,6 +47,32 @@ internal class VaultRepository(context: Context, private val defaultBookName: St
      * 关闭数据库并清理内部密钥。
      */
     suspend fun close() = storage.close()
+
+    /**
+     * 读取已复制的生成密码。
+     * @return 按最近复制排序的历史记录
+     */
+    suspend fun generatedPasswordCopies(): List<GeneratedPasswordCopy> =
+        storage.useDatabase { vaultDao().generatedPasswordCopies() }
+
+    /**
+     * 保存一次成功复制生成密码的记录。
+     * @param password 已写入剪贴板的生成密码
+     */
+    suspend fun recordGeneratedPasswordCopy(password: String) = storage.useDatabase {
+        vaultDao().insertGeneratedPasswordCopy(GeneratedPasswordCopy(password = password, copiedAt = System.currentTimeMillis()))
+    }
+
+    /**
+     * 在同一事务中删除选中的历史记录并读取最新列表。
+     * @param ids 选中的历史记录标识
+     * @return 剩余的历史记录
+     */
+    suspend fun deleteGeneratedPasswordCopies(ids: Set<Long>): List<GeneratedPasswordCopy> = storage.transaction {
+        val dao = vaultDao()
+        for (batch in ids.chunked(500)) dao.deleteGeneratedPasswordCopies(batch)
+        dao.generatedPasswordCopies()
+    }
 
     /**
      * 读取指定密码本的摘要，密码本已删除时选最早创建的本。

@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.winter.mypass.core.utils.MMKVUtils
 import com.winter.mypass.feature.home.model.CategoryKind
+import com.winter.mypass.feature.home.model.GeneratedPasswordCopy
 import com.winter.mypass.feature.home.model.PasswordDraft
 import com.winter.mypass.feature.home.model.PasswordGenerator
 import com.winter.mypass.feature.home.model.PasswordGroup
@@ -18,8 +19,10 @@ import com.winter.mypass.feature.home.model.VaultSort
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -55,6 +58,13 @@ internal sealed interface VaultPage {
     ) : VaultPage
 
     data class Categories(val kind: CategoryKind) : VaultPage
+
+    /**
+     * 暂存当前历史页已加载的复制记录。
+     * @author Tingdong
+     * @date 2026-11-20
+     */
+    data class GenerationHistory(val entries: List<GeneratedPasswordCopy>? = null) : VaultPage
 }
 
 /**
@@ -109,13 +119,12 @@ internal data class GeneratorOptions(
 internal data class GeneratorState(
     val options: GeneratorOptions = GeneratorOptions(),
     val password: String = "",
-    val generating: Boolean = false,
     val failed: Boolean = false,
 ) {
     /**
      * 调试输出只包含生成设置。
      */
-    override fun toString(): String = "GeneratorState(options=$options, generating=$generating)"
+    override fun toString(): String = "GeneratorState(options=$options, failed=$failed)"
 }
 
 /**
@@ -150,6 +159,7 @@ internal class VaultViewModel(
 
     private val current: VaultState get() = mutableState.value
     private var generation: Job? = null
+    private var pendingGeneratedAddition: String? = null
 
     init {
         startGeneration(current.generator.options)
@@ -238,12 +248,16 @@ internal class VaultViewModel(
     }
 
     /**
-     * 新建当前本的记录，可使用生成的密码。
+     * 新建当前本的记录，生成页确认可等待当前写入结束。
      * @param password 需要回填的生成结果
      */
     fun newPassword(password: String = "") {
         val book = current.snapshot?.bookId ?: return
-        if (current.busy || current.page != null) return
+        if (current.page != null) return
+        if (current.busy) {
+            if (current.tab == VaultTab.Generate && password.isNotEmpty()) pendingGeneratedAddition = password
+            return
+        }
         val draft = PasswordDraft(bookId = book)
         mutableState.value = current.copy(
             tab = VaultTab.Home, page = VaultPage.Editor(draft, draft.copy(password = password)), problem = null,
@@ -367,11 +381,55 @@ internal class VaultViewModel(
     }
 
     /**
-     * 从分类页面返回列表。
+     * 从二级页面返回对应底栏页面。
      */
     fun closePage() {
-        if (current.busy || current.page !is VaultPage.Categories) return
+        if (current.busy || (current.page !is VaultPage.Categories && current.page !is VaultPage.GenerationHistory)) return
         mutableState.value = current.copy(page = null, problem = null)
+    }
+
+    /**
+     * 打开生成历史并读取已复制的密码。
+     */
+    fun openGenerationHistory() {
+        if (current.busy || current.tab != VaultTab.Generate || current.page != null) return
+        mutableState.value = current.copy(page = VaultPage.GenerationHistory(), problem = null)
+        loadGenerationHistory()
+    }
+
+    /**
+     * 加载或重试读取生成历史。
+     */
+    fun loadGenerationHistory() {
+        if (current.page !is VaultPage.GenerationHistory) return
+        perform {
+            val entries = repository.generatedPasswordCopies()
+            mutableState.value = current.copy(page = VaultPage.GenerationHistory(entries))
+        }
+    }
+
+    /**
+     * 复制历史中的一条密码。
+     * @param id 历史记录标识
+     */
+    fun copyFromGenerationHistory(id: Long) {
+        val history = current.page as? VaultPage.GenerationHistory ?: return
+        val entry = history.entries?.firstOrNull { it.id == id } ?: return
+        perform { clipboard.copy(entry.password, sensitive = true) }
+    }
+
+    /**
+     * 删除选中的生成历史并刷新历史页。
+     * @param ids 选中的历史记录标识
+     * @param onDeleted 删除提交后的回调
+     */
+    fun deleteFromGenerationHistory(ids: Set<Long>, onDeleted: () -> Unit) {
+        if (current.page !is VaultPage.GenerationHistory || ids.isEmpty()) return
+        perform {
+            val remaining = repository.deleteGeneratedPasswordCopies(ids)
+            mutableState.value = current.copy(page = VaultPage.GenerationHistory(remaining))
+            onDeleted()
+        }
     }
 
     /**
@@ -430,18 +488,16 @@ internal class VaultViewModel(
     }
 
     /**
-     * 复制当前生成的密码，剪贴板写入成功后通知界面。
+     * 复制点击时显示的密码，并在剪贴板写入成功后记录历史。
      * @param value 用户点击时显示的密码
      * @param onCopied 剪贴板写入成功后的回调
      */
     fun copyGenerated(value: String, onCopied: () -> Unit) {
-        val generator = current.generator
-        if (current.tab != VaultTab.Generate || current.page != null || generator.generating ||
-            value.isEmpty() || value != generator.password
-        ) return
+        if (current.tab != VaultTab.Generate || current.page != null || value.isEmpty()) return
         perform {
             clipboard.copy(value, sensitive = true, showToast = false)
             onCopied()
+            repository.recordGeneratedPasswordCopy(value)
         }
     }
 
@@ -451,7 +507,9 @@ internal class VaultViewModel(
      */
     fun generatorOptions(options: GeneratorOptions) {
         val currentGenerator = current.generator
-        if (current.busy || (options == currentGenerator.options && !currentGenerator.failed)) return
+        if (current.busy || current.tab != VaultTab.Generate || current.page != null ||
+            (options == currentGenerator.options && !currentGenerator.failed)
+        ) return
         startGeneration(options)
     }
 
@@ -459,8 +517,9 @@ internal class VaultViewModel(
      * 用当前参数手动生成一组新密码。
      */
     fun refreshGeneratedPassword() {
-        val generator = current.generator
-        if (!current.busy && !generator.generating) startGeneration(generator.options)
+        if (!current.busy && current.tab == VaultTab.Generate && current.page == null) {
+            startGeneration(current.generator.options)
+        }
     }
 
     /**
@@ -473,7 +532,7 @@ internal class VaultViewModel(
 
         generation?.cancel()
         mutableState.value = current.copy(
-            generator = current.generator.copy(options = options, generating = true, failed = false),
+            generator = current.generator.copy(options = options, failed = false),
         )
         generation = viewModelScope.launch {
             try {
@@ -501,6 +560,7 @@ internal class VaultViewModel(
      */
     override fun onCleared() {
         generation?.cancel()
+        pendingGeneratedAddition = null
         mutableState.value = VaultState()
     }
 
@@ -523,6 +583,7 @@ internal class VaultViewModel(
             try {
                 block()
             } catch (cancelled: CancellationException) {
+                pendingGeneratedAddition = null
                 throw cancelled
             } catch (failure: VaultException) {
                 mutableState.value = current.copy(problem = failure.problem)
@@ -530,6 +591,11 @@ internal class VaultViewModel(
                 mutableState.value = current.copy(problem = VaultProblem.Storage)
             } finally {
                 mutableState.value = current.copy(busy = false)
+            }
+            val addition = pendingGeneratedAddition
+            pendingGeneratedAddition = null
+            if (addition != null && currentCoroutineContext().isActive && current.tab == VaultTab.Generate) {
+                newPassword(addition)
             }
         }
     }

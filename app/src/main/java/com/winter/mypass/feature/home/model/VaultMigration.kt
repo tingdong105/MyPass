@@ -38,6 +38,23 @@ internal val VaultMigration2To3 = object : Migration(2, 3) {
     }
 }
 
+/** 在加密库中新增生成密码的复制历史。 */
+internal val VaultMigration3To4 = object : Migration(3, 4) {
+    /**
+     * 创建独立历史表，保留原有密码本的数据。
+     * @param db 当前加密数据库
+     */
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("""
+            CREATE TABLE vault_generated_password_copies (
+                id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                password TEXT NOT NULL,
+                copiedAt INTEGER NOT NULL
+            )
+        """.trimIndent())
+    }
+}
+
 /**
  * 将旧版 entries 结构复制到 v2 表，先移除旧关联表再移除其父表。
  * @receiver 迁移事务中的数据库

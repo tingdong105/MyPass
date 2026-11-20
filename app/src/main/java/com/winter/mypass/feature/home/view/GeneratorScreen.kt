@@ -1,5 +1,7 @@
 package com.winter.mypass.feature.home.view
 
+import android.os.Build
+import android.view.HapticFeedbackConstants
 import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
@@ -34,12 +36,15 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.winter.mypass.R
@@ -50,7 +55,6 @@ import com.winter.mypass.feature.home.viewmodel.GeneratorState
 import com.winter.mypass.feature.home.viewmodel.VaultState
 import com.winter.mypass.feature.home.viewmodel.VaultTab
 import com.winter.mypass.ui.theme.Theme
-import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.Button
@@ -58,6 +62,7 @@ import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.Slider
+import top.yukonga.miuix.kmp.basic.SliderDefaults
 import top.yukonga.miuix.kmp.basic.Snackbar
 import top.yukonga.miuix.kmp.basic.SnackbarDefaults
 import top.yukonga.miuix.kmp.basic.SnackbarDuration
@@ -92,6 +97,7 @@ internal fun GeneratorPage(
     snackbarHost: SnackbarHostState,
 ) {
     val scope = rememberCoroutineScope()
+    val view = LocalView.current
     var copyVersion by remember { mutableIntStateOf(0) }
     val message = stringResource(R.string.vault_copy_add_prompt)
     val confirm = stringResource(R.string.vault_confirm_add)
@@ -101,7 +107,10 @@ internal fun GeneratorPage(
             scope.launch {
                 snackbarHost.newestSnackbarData()?.dismiss()
                 val action = snackbarHost.showSnackbar(message, actionLabel = confirm, duration = SnackbarDuration.Custom(3_000))
-                if (action == SnackbarResult.ActionPerformed) onAdd(password)
+                if (action == SnackbarResult.ActionPerformed) {
+                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                    onAdd(password)
+                }
             }
         }
     })
@@ -113,12 +122,13 @@ internal fun GeneratorPage(
  */
 @Composable
 internal fun GeneratorSnackbarHost(state: SnackbarHostState) {
+    val colors = MiuixTheme.colorScheme
     SnackbarHost(state) { data ->
         Snackbar(
             data,
             colors = SnackbarDefaults.snackbarColors(
                 actionContainerColor = Color.Transparent,
-                actionContentColor = MiuixTheme.colorScheme.secondaryVariant,
+                actionContentColor = lerp(colors.primary, colors.secondaryVariant, 0.55f),
             ),
         )
     }
@@ -143,8 +153,9 @@ private fun GeneratorPanel(
     onCopy: (String) -> Unit,
 ) {
     val options = state.options
-    val actionsEnabled = !state.generating && !busy
+    val actionsEnabled = !busy
     val resultAvailable = actionsEnabled && state.password.isNotEmpty()
+    val passwordDisplay = remember { GeneratedPasswordDisplay() }
     val refreshRotation = remember { Animatable(0f) }
     val scope = rememberCoroutineScope()
     val cardInset = Theme.spacing.medium
@@ -155,14 +166,14 @@ private fun GeneratorPanel(
             cornerRadius = fieldRadius + cardInset,
             insideMargin = PaddingValues(cardInset),
         ) {
-            DashedPassword(state.password, fieldRadius)
+            DashedPassword(state.password, fieldRadius, passwordDisplay)
             Row(
                 modifier = Modifier.fillMaxWidth().padding(top = Theme.spacing.medium),
                 horizontalArrangement = Arrangement.spacedBy(Theme.spacing.small),
             ) {
                 GeneratorActionButton(
                     R.string.vault_refresh_password,
-                    enabled = actionsEnabled && !refreshRotation.isRunning,
+                    enabled = actionsEnabled,
                     modifier = Modifier.weight(1f),
                     icon = {
                         Icon(
@@ -171,12 +182,12 @@ private fun GeneratorPanel(
                         )
                     },
                     onClick = {
-                        if (!refreshRotation.isRunning) {
-                            onRefresh()
-                            scope.launch(start = CoroutineStart.UNDISPATCHED) {
-                                refreshRotation.animateTo(360f, tween(420, easing = FastOutSlowInEasing))
-                                refreshRotation.snapTo(0f)
-                            }
+                        onRefresh()
+                        scope.launch {
+                            refreshRotation.animateTo(
+                                (refreshRotation.value.toInt() / 360 + 1) * 360f,
+                                tween(420, easing = FastOutSlowInEasing),
+                            )
                         }
                     },
                 )
@@ -184,11 +195,11 @@ private fun GeneratorPanel(
                     R.string.vault_copy_action, enabled = resultAvailable,
                     modifier = Modifier.weight(1f), primary = true,
                     icon = { VaultCopyIcon(copyVersion) },
-                ) { onCopy(state.password) }
+                ) { passwordDisplay.visiblePassword?.let(onCopy) }
             }
         }
         if (state.failed) VaultErrorText(VaultProblem.Storage)
-        VaultGroup {
+        VaultGroup(Modifier.padding(top = Theme.spacing.small)) {
             GeneratorLength(options.length, enabled = !busy) { onOptions(options.copy(length = it)) }
             GeneratorSwitch(
                 R.string.vault_letters, options.letters, enabled = !busy && (!options.letters || options.digits || options.symbols),
@@ -212,9 +223,10 @@ private fun GeneratorPanel(
  * 在随内容伸缩的描边中展示密码。
  * @param password 当前生成结果
  * @param radius 虚线框圆角
+ * @param display 复制时使用的文字层状态
  */
 @Composable
-private fun DashedPassword(password: String, radius: Dp) {
+private fun DashedPassword(password: String, radius: Dp, display: GeneratedPasswordDisplay) {
     val colors = MiuixTheme.colorScheme
     Box(
         modifier = Modifier.fillMaxWidth()
@@ -242,15 +254,21 @@ private fun DashedPassword(password: String, radius: Dp) {
                 alignment = Alignment.TopStart,
             )
             .heightIn(min = Theme.sizes.minimumTouchTarget + Theme.spacing.large)
-            .padding(Theme.spacing.medium),
-        contentAlignment = Alignment.CenterStart,
+            .padding(horizontal = Theme.spacing.small, vertical = Theme.spacing.medium),
+        contentAlignment = Alignment.Center,
     ) {
-        Text(
-            password.ifEmpty { "•••• •••• •••• ••••" },
-            style = MiuixTheme.textStyles.title3,
-            fontFamily = FontFamily.Monospace,
-            color = if (password.isEmpty()) colors.onSurfaceVariantSummary else colors.onSurface,
-        )
+        if (password.isEmpty()) {
+            Text(
+                "•••• •••• •••• ••••",
+                modifier = Modifier.fillMaxWidth(),
+                style = MiuixTheme.textStyles.title3,
+                fontFamily = FontFamily.Monospace,
+                textAlign = TextAlign.Center,
+                color = colors.onSurfaceVariantSummary,
+            )
+        } else {
+            GeneratedPassword(password, colors.onSurface, display)
+        }
     }
 }
 
@@ -272,8 +290,12 @@ private fun GeneratorActionButton(
     icon: @Composable () -> Unit,
     onClick: () -> Unit,
 ) {
+    val view = LocalView.current
     Button(
-        onClick = onClick,
+        onClick = {
+            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+            onClick()
+        },
         modifier = modifier,
         enabled = enabled,
         cornerRadius = Theme.sizes.minimumTouchTarget,
@@ -298,8 +320,18 @@ private fun GeneratorActionButton(
 private fun GeneratorLength(length: Int, enabled: Boolean, onChange: (Int) -> Unit) {
     val range = PasswordGenerator.LengthRange
     val label = stringResource(R.string.vault_length)
+    val view = LocalView.current
+    var requestedLength by remember(length) { mutableIntStateOf(length) }
+    val stepFeedback = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+        HapticFeedbackConstants.SEGMENT_FREQUENT_TICK
+    } else {
+        HapticFeedbackConstants.CLOCK_TICK
+    }
     Column(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = Theme.spacing.medium, vertical = Theme.spacing.small),
+        modifier = Modifier.fillMaxWidth().padding(
+            start = Theme.spacing.medium, end = Theme.spacing.medium,
+            top = Theme.spacing.medium, bottom = Theme.spacing.small,
+        ),
         verticalArrangement = Arrangement.spacedBy(Theme.spacing.small),
     ) {
         Row(
@@ -320,11 +352,20 @@ private fun GeneratorLength(length: Int, enabled: Boolean, onChange: (Int) -> Un
             )
         }
         Slider(
-            length.toFloat(), { onChange(it.roundToInt()) },
+            value = length.toFloat(),
+            onValueChange = {
+                val next = it.roundToInt()
+                if (enabled && next != requestedLength) {
+                    requestedLength = next
+                    view.performHapticFeedback(stepFeedback)
+                    onChange(next)
+                }
+            },
             modifier = Modifier.fillMaxWidth().semantics { contentDescription = label },
             enabled = enabled,
             valueRange = range.first.toFloat()..range.last.toFloat(),
             steps = range.last - range.first - 1,
+            hapticEffect = SliderDefaults.SliderHapticEffect.None,
         )
     }
 }
@@ -343,8 +384,12 @@ private fun GeneratorSwitch(
     enabled: Boolean,
     onChange: (Boolean) -> Unit,
 ) {
+    val view = LocalView.current
     BasicComponent(
-        modifier = Modifier.toggleable(checked, enabled = enabled, role = Role.Switch, onValueChange = onChange),
+        modifier = Modifier.toggleable(checked, enabled = enabled, role = Role.Switch) {
+            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+            onChange(it)
+        },
         title = stringResource(label),
         endActions = { Switch(checked, onCheckedChange = null, enabled = enabled) },
     )

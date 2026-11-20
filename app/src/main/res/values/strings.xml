@@ -121,6 +121,11 @@
     <string name="vault_category_actions">更多操作</string>
     <string name="vault_length">长度</string>
     <string name="vault_generator_title">密码生成器</string>
+    <string name="vault_generator_history">生成历史</string>
+    <string name="vault_history_empty">暂无复制记录</string>
+    <string name="vault_history_select_row">选择此记录</string>
+    <string name="vault_history_clear_selection">退出多选</string>
+    <string name="vault_history_delete_title">删除生成历史</string>
     <string name="vault_letters">字母</string>
     <string name="vault_copy_add_prompt">复制成功，是否添加密码？</string>
     <string name="vault_confirm_add">确认</string>
@@ -128,5 +133,11 @@
     <string name="vault_copy_action">复制</string>
     <plurals name="vault_record_count">
         <item quantity="other">%d 条记录</item>
+    </plurals>
+    <plurals name="vault_history_selected">
+        <item quantity="other">已选 %d 条</item>
+    </plurals>
+    <plurals name="vault_history_delete_summary">
+        <item quantity="other">确定删除选中的 %d 条复制记录？</item>
     </plurals>
 </resources>
