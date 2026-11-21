@@ -629,7 +629,7 @@ private fun PasswordList(
 }
 
 /**
- * 用原生按压卡片显示平台、密码与用户名。
+ * 用原生按压卡片依次显示平台与密码。
  * @param entry 当前记录摘要
  * @param type 记录关联的密码类型
  * @param enabled 当前是否可以操作
@@ -656,17 +656,15 @@ private fun PasswordListCard(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             VaultGlyph(entry.platform, type)
-            Column(Modifier.weight(1f)) {
+            Column(
+                Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(Theme.spacing.small / 2),
+            ) {
                 Text(entry.platform, style = MiuixTheme.textStyles.title3, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(
                     entry.passwordPreview.orEmpty(),
                     style = MiuixTheme.textStyles.body1, fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Medium,
-                )
-                if (!entry.account.isNullOrBlank()) Text(
-                    entry.account, modifier = Modifier.padding(top = Theme.spacing.small / 2),
-                    style = MiuixTheme.textStyles.body2, color = colors.onSurfaceVariantSummary,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis,
                 )
             }
             Icon(MiuixIcons.ChevronForward, null, Modifier.size(Theme.spacing.medium), tint = colors.onSurfaceVariantSummary)
