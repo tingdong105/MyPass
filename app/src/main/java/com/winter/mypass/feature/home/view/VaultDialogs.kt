@@ -79,6 +79,7 @@ import top.yukonga.miuix.kmp.icon.extended.More
 import top.yukonga.miuix.kmp.icon.extended.Pin
 import top.yukonga.miuix.kmp.icon.extended.Show
 import top.yukonga.miuix.kmp.icon.extended.Sort
+import top.yukonga.miuix.kmp.icon.extended.UploadCloud
 import top.yukonga.miuix.kmp.overlay.OverlayBottomSheet
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.overlay.OverlayListPopup
@@ -475,12 +476,20 @@ internal fun VaultSettings(
     busy: Boolean,
     onPasswordPreview: (PasswordPreviewSettings) -> Unit,
     onChangeCredential: () -> Unit,
+    onBackup: () -> Unit,
     onManage: (CategoryKind) -> Unit,
 ) {
     var choosingSymbol by remember { mutableStateOf(false) }
     var customSymbol by remember { mutableStateOf<String?>(null) }
     val symbolTitle = stringResource(R.string.vault_mask_symbol)
     SettingsSection(R.string.vault_security_settings) {
+        VaultLink(
+            stringResource(R.string.backup_title),
+            enabled = !busy,
+            icon = MiuixIcons.UploadCloud,
+            onClick = onBackup,
+        )
+        VaultRowDivider()
         VaultLink(
             stringResource(R.string.lock_change_title),
             enabled = !busy,
@@ -565,7 +574,7 @@ internal fun VaultSettings(
  * @param content 组内选项
  */
 @Composable
-private fun SettingsSection(@StringRes title: Int, content: @Composable ColumnScope.() -> Unit) {
+internal fun SettingsSection(@StringRes title: Int, content: @Composable ColumnScope.() -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(Theme.spacing.small)) {
         Text(
             stringResource(title),

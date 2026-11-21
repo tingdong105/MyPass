@@ -1,5 +1,6 @@
 package com.winter.mypass.feature.applock.viewmodel
 
+import android.content.Context
 import android.os.SystemClock
 import android.security.keystore.KeyPermanentlyInvalidatedException
 import android.util.Log
@@ -11,6 +12,8 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.winter.mypass.feature.applock.model.CredentialStore
 import com.winter.mypass.feature.applock.model.CredentialType
+import com.winter.mypass.feature.backup.model.BackupRepository
+import com.winter.mypass.feature.backup.viewmodel.CloudBackupViewModel
 import com.winter.mypass.feature.home.model.VaultClipboard
 import com.winter.mypass.feature.home.model.VaultRepository
 import com.winter.mypass.feature.home.viewmodel.VaultViewModel
@@ -74,6 +77,7 @@ internal enum class LockStorageError { InvalidRecord, MissingRecord, MissingKey,
  * @date 2026-11-18
  */
 internal class AppLockViewModel(
+    context: Context,
     private val store: CredentialStore,
     private val vault: VaultRepository,
     clipboard: VaultClipboard,
@@ -90,10 +94,18 @@ internal class AppLockViewModel(
     private val vaultStore = ViewModelStore()
     private val vaultModels = ViewModelProvider.create(
         store = vaultStore,
-        factory = viewModelFactory { initializer { VaultViewModel(vault, clipboard) } },
+        factory = viewModelFactory {
+            initializer { VaultViewModel(vault, clipboard) }
+            initializer { CloudBackupViewModel(BackupRepository(context, vault)) { vaultModel?.load() } }
+        },
     )
     val vaultModel: VaultViewModel?
         get() = if (state.value.screen == LockScreen.Unlocked) vaultModels[VaultViewModel::class] else null
+    val backupModel: CloudBackupViewModel
+        get() {
+            check(state.value.screen == LockScreen.Unlocked)
+            return vaultModels[CloudBackupViewModel::class]
+        }
     private var closing: Job? = null
     private var operation: Job? = null
     private var timeout: Job? = null

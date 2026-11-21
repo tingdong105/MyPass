@@ -92,6 +92,9 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
 
+    // OKHttp
+    implementation(libs.okhttp)
+
     // Miuix 主界面组件、主题与扩展图标
     implementation(libs.miuix.ui)
     implementation(libs.miuix.icons)

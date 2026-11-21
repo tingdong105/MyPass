@@ -23,6 +23,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.winter.mypass.feature.applock.view.AppLockScreen
 import com.winter.mypass.feature.applock.viewmodel.AppLockViewModel
 import com.winter.mypass.feature.applock.viewmodel.LockScreen
+import com.winter.mypass.feature.backup.view.BackupDocumentHost
 import com.winter.mypass.feature.home.model.VaultRepository
 import com.winter.mypass.nav.AppNavHost
 import com.winter.mypass.ui.theme.MyPassTheme
@@ -39,6 +40,7 @@ class MainActivity : ComponentActivity() {
             initializer {
                 val app = application as App
                 AppLockViewModel(
+                    app,
                     app.credentialStore,
                     VaultRepository(app, app.getString(R.string.vault_default_book)),
                     app.vaultClipboard,
@@ -57,30 +59,32 @@ class MainActivity : ComponentActivity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         enableEdgeToEdge()
         setContent {
-            MyPassTheme {
-                val state by appLock.state.collectAsState()
-                val vault = if (state.screen == LockScreen.Unlocked) appLock.vaultModel else null
-                if (vault != null) {
-                    Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.surface)) {
-                        val entrance = remember {
-                            MutableTransitionState(false).apply { targetState = true }
+            BackupDocumentHost {
+                MyPassTheme {
+                    val state by appLock.state.collectAsState()
+                    val vault = if (state.screen == LockScreen.Unlocked) appLock.vaultModel else null
+                    if (vault != null) {
+                        Box(Modifier.fillMaxSize().background(MiuixTheme.colorScheme.surface)) {
+                            val entrance = remember {
+                                MutableTransitionState(false).apply { targetState = true }
+                            }
+                            AnimatedVisibility(
+                                visibleState = entrance,
+                                enter = fadeIn(tween(200)) + slideInVertically(tween(240)) { it / 40 },
+                                label = "Unlocked home",
+                            ) {
+                                AppNavHost(vault, appLock)
+                            }
                         }
-                        AnimatedVisibility(
-                            visibleState = entrance,
-                            enter = fadeIn(tween(200)) + slideInVertically(tween(240)) { it / 40 },
-                            label = "Unlocked home",
-                        ) {
-                            AppNavHost(vault, appLock)
-                        }
+                    } else {
+                        AppLockScreen(
+                            state = state,
+                            onChoose = appLock::choose,
+                            onChooseAgain = appLock::chooseAgain,
+                            onSubmit = appLock::submit,
+                            onRetry = appLock::retry,
+                        )
                     }
-                } else {
-                    AppLockScreen(
-                        state = state,
-                        onChoose = appLock::choose,
-                        onChooseAgain = appLock::chooseAgain,
-                        onSubmit = appLock::submit,
-                        onRetry = appLock::retry,
-                    )
                 }
             }
         }

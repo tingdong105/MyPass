@@ -11,11 +11,13 @@ import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.RoomDatabase
 import androidx.room.Update
+import kotlinx.serialization.Serializable
 
 /**
  * 密码本及其创建顺序。
  */
 @Entity(tableName = "vault_books", indices = [Index(value = ["name"], unique = true)])
+@Serializable
 internal data class VaultBook(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
@@ -26,12 +28,14 @@ internal data class VaultBook(
  * 可跨密码本使用的标签。
  */
 @Entity(tableName = "vault_tags", indices = [Index(value = ["name"], unique = true)])
+@Serializable
 internal data class VaultTag(@PrimaryKey(autoGenerate = true) val id: Long = 0, val name: String)
 
 /**
  * 可跨密码本使用的类型。
  */
 @Entity(tableName = "vault_types", indices = [Index(value = ["name"], unique = true)])
+@Serializable
 internal data class VaultType(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
@@ -49,6 +53,7 @@ internal data class VaultType(
     ],
     indices = [Index("bookId"), Index("typeId")],
 )
+@Serializable
 internal class VaultPassword(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val bookId: Long,
@@ -69,6 +74,7 @@ internal class VaultPassword(
  * @date 2026-11-20
  */
 @Entity(tableName = "vault_generated_password_copies")
+@Serializable
 internal class GeneratedPasswordCopy(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val password: String,
@@ -87,6 +93,7 @@ internal class GeneratedPasswordCopy(
     ],
     indices = [Index("tagId")],
 )
+@Serializable
 internal data class PasswordTag(val passwordId: Long, val tagId: Long)
 
 /**
@@ -94,6 +101,19 @@ internal data class PasswordTag(val passwordId: Long, val tagId: Long)
  */
 @Dao
 internal interface VaultDao {
+    /** 读取完整备份行，保留原始标识和创建时间。 */
+    @Query("SELECT * FROM vault_books ORDER BY id") suspend fun backupBooks(): List<VaultBook>
+    @Query("SELECT * FROM vault_tags ORDER BY id") suspend fun backupTags(): List<VaultTag>
+    @Query("SELECT * FROM vault_types ORDER BY id") suspend fun backupTypes(): List<VaultType>
+    @Query("SELECT * FROM vault_passwords ORDER BY id") suspend fun backupPasswords(): List<VaultPassword>
+    @Query("SELECT * FROM vault_password_tags ORDER BY passwordId, tagId") suspend fun backupLinks(): List<PasswordTag>
+
+    /** 删除父记录时由外键级联移除密码和标签关联。 */
+    @Query("DELETE FROM vault_books") suspend fun clearBooks()
+    @Query("DELETE FROM vault_tags") suspend fun clearTags()
+    @Query("DELETE FROM vault_types") suspend fun clearTypes()
+    @Query("DELETE FROM vault_generated_password_copies") suspend fun clearGeneratedCopies()
+
     /**
      * 按复制顺序倒序读取生成历史。
      * @return 当前生成历史

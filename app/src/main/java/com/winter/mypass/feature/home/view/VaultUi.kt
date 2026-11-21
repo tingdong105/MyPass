@@ -41,6 +41,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.hideFromAccessibility
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
@@ -232,7 +233,7 @@ internal fun VaultLink(
         startAction = icon?.let { { Icon(it, null, Modifier.size(22.dp)) } },
         endActions = {
             if (value != null) Text(
-                value, Modifier.padding(end = Theme.spacing.small), color = secondary,
+                value, Modifier.weight(1f, fill = false).padding(end = Theme.spacing.small), color = secondary,
                 style = MiuixTheme.textStyles.body2, maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
             Icon(MiuixIcons.ChevronForward, null, Modifier.size(16.dp), tint = secondary)
@@ -315,6 +316,7 @@ internal fun VaultChoice(
  * @param onDismiss 取消回调
  * @param onConfirm 确认回调
  * @param cancel 取消操作文案
+ * @param textAlign 标题和说明的对齐方式
  */
 @Composable
 internal fun VaultConfirm(
@@ -325,8 +327,20 @@ internal fun VaultConfirm(
     onDismiss: () -> Unit,
     onConfirm: () -> Unit,
     @StringRes cancel: Int = R.string.vault_cancel,
+    textAlign: TextAlign = TextAlign.Center,
 ) {
-    OverlayDialog(show, title = title, summary = summary, onDismissRequest = onDismiss) {
+    val useDefaultAlignment = textAlign == TextAlign.Center
+    OverlayDialog(
+        show, title = title.takeIf { useDefaultAlignment }, summary = summary.takeIf { useDefaultAlignment },
+        onDismissRequest = onDismiss,
+    ) {
+        if (!useDefaultAlignment) {
+            Text(title, Modifier.fillMaxWidth().padding(bottom = Theme.spacing.small),
+                style = MiuixTheme.textStyles.title4, textAlign = textAlign)
+            Text(summary, Modifier.fillMaxWidth().padding(bottom = Theme.spacing.medium),
+                style = MiuixTheme.textStyles.body1, textAlign = textAlign,
+                color = MiuixTheme.colorScheme.onSurfaceSecondary)
+        }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Theme.spacing.small)) {
             TextButton(stringResource(cancel), onClick = onDismiss, modifier = Modifier.weight(1f))
             TextButton(

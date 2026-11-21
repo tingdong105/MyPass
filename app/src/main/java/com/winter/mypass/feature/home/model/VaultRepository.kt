@@ -334,6 +334,31 @@ internal class VaultRepository(context: Context, private val defaultBookName: St
         CategoryKind.Type -> types()
     }
 
+    /** 在单个读事务中获取完整密码库。 */
+    suspend fun backup(): VaultBackup = storage.transaction {
+        with(vaultDao()) {
+            VaultBackup(System.currentTimeMillis(), backupBooks(), backupTags(), backupTypes(),
+                backupPasswords(), backupLinks(), generatedPasswordCopies())
+        }
+    }
+
+    /** 在同一事务中替换所有数据，失败时由 Room 回滚。 */
+    suspend fun restore(data: VaultBackup) = storage.transaction {
+        with(vaultDao()) {
+            clearBooks()
+            clearTags()
+            clearTypes()
+            clearGeneratedCopies()
+            data.books.forEach { insertBook(it) }
+            data.types.forEach { insertType(it) }
+            data.tags.forEach { insertTag(it) }
+            data.passwords.forEach { insertPassword(it) }
+            insertPasswordTags(data.links)
+            data.history.forEach { insertGeneratedPasswordCopy(it) }
+            ensureBuiltInTypes()
+        }
+    }
+
     companion object {
         const val DatabaseName = "vault.db"
 

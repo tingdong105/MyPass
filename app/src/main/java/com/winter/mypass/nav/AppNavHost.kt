@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSerializable
 import androidx.compose.runtime.staticCompositionLocalOf
@@ -16,6 +17,7 @@ import androidx.navigation3.runtime.rememberSaveableStateHolderNavEntryDecorator
 import androidx.navigation3.runtime.serialization.NavBackStackSerializer
 import androidx.navigation3.ui.NavDisplay
 import com.winter.mypass.feature.applock.viewmodel.AppLockViewModel
+import com.winter.mypass.feature.backup.view.LocalBackupDocuments
 import com.winter.mypass.feature.home.viewmodel.VaultViewModel
 
 internal val LocalAppNavigator = staticCompositionLocalOf<AppNavigator> { error("当前页面缺少导航宿主") }
@@ -44,6 +46,11 @@ internal fun AppNavHost(
     val routeProvider = remember(vault, appLock) { appEntryProvider(vault, appLock) }
     val navigator = remember(backStack, hostState, routeProvider) {
         AppNavigator(backStack, hostState.results) { route -> routeProvider(route) }
+    }
+
+    val document = LocalBackupDocuments.current.selected
+    LaunchedEffect(document, navigator) {
+        if (document != null) navigator.navigate(AppRoute.Backup)
     }
 
     DisposableEffect(navigator) {

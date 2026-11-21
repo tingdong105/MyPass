@@ -11,6 +11,7 @@ import androidx.navigation3.runtime.entryProvider
 import androidx.navigation3.ui.NavDisplay
 import com.winter.mypass.feature.applock.view.ChangeCredentialRoute
 import com.winter.mypass.feature.applock.viewmodel.AppLockViewModel
+import com.winter.mypass.feature.backup.view.CloudBackupScreen
 import com.winter.mypass.feature.home.view.VaultScreen
 import com.winter.mypass.feature.home.viewmodel.VaultViewModel
 
@@ -25,7 +26,10 @@ internal fun appEntryProvider(vault: VaultViewModel, appLock: AppLockViewModel):
 ) {
     entry<AppRoute.Home> {
         val navigator = LocalAppNavigator.current
-        VaultScreen(vault) { navigator.navigate(AppRoute.ChangeCredential) }
+        VaultScreen(vault, { navigator.navigate(AppRoute.Backup) }) { navigator.navigate(AppRoute.ChangeCredential) }
+    }
+    entry<AppRoute.Backup>(metadata = changeCredentialTransitions) {
+        CloudBackupScreen(appLock.backupModel, LocalAppNavigator.current::navigateBack)
     }
     entry<AppRoute.ChangeCredential>(metadata = changeCredentialTransitions) {
         ChangeCredentialRoute(appLock, LocalAppNavigator.current::navigateBack)

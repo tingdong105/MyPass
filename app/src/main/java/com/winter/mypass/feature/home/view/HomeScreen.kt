@@ -158,7 +158,7 @@ private val VaultState.destination: Destination
  * @param onChangeCredential 打开启动密码修改页
  */
 @Composable
-internal fun VaultScreen(model: VaultViewModel, onChangeCredential: () -> Unit) {
+internal fun VaultScreen(model: VaultViewModel, onBackup: () -> Unit, onChangeCredential: () -> Unit) {
     val state by model.state.collectAsStateWithLifecycle()
     val list = remember { LazyListState() }
     val focus = LocalFocusManager.current
@@ -227,6 +227,7 @@ internal fun VaultScreen(model: VaultViewModel, onChangeCredential: () -> Unit) 
                     onSort = model::sort,
                     onPasswordPreview = model::setPasswordPreview,
                     onChangeCredential = onChangeCredential,
+                    onBackup = onBackup,
                     onClear = model::clearProblem,
                     onOpen = model::openDetail,
                     onAdd = model::newPassword,
@@ -328,6 +329,7 @@ private fun VaultTopLevel(
     onSort: (VaultSort) -> Unit,
     onPasswordPreview: (PasswordPreviewSettings) -> Unit,
     onChangeCredential: () -> Unit,
+    onBackup: () -> Unit,
     onClear: () -> Unit,
     onOpen: (Long) -> Unit,
     onAdd: (String) -> Unit,
@@ -494,7 +496,7 @@ private fun VaultTopLevel(
                         }
                         VaultTab.Settings -> VaultColumn(body, horizontalPadding = Theme.spacing.medium) {
                             VaultErrorText(state.problem)
-                            VaultSettings(state.passwordPreview, state.busy, onPasswordPreview, onChangeCredential, onManage)
+                            VaultSettings(state.passwordPreview, state.busy, onPasswordPreview, onChangeCredential, onBackup, onManage)
                         }
                     }
                 }
@@ -957,7 +959,7 @@ internal fun VaultTabbedPreview(state: VaultState) {
             state = state.copy(snapshot = snapshot), snapshot = snapshot,
             list = remember { LazyListState() }, active = true,
             onTab = {}, onBook = {}, onManage = {}, onQuery = {}, onSort = {}, onPasswordPreview = {},
-            onChangeCredential = {}, onClear = {}, onOpen = {}, onAdd = {}, onGeneratorOptions = {},
+            onChangeCredential = {}, onBackup = {}, onClear = {}, onOpen = {}, onAdd = {}, onGeneratorOptions = {},
             onRefreshGenerated = {}, onCopyGenerated = { _, _ -> }, onOpenGenerationHistory = {},
             onToggleSelection = {}, onClearSelection = {}, onDeleteSelected = {},
         )
