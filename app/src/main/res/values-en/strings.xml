@@ -45,6 +45,8 @@
     <string name="vault_settings">Settings</string>
     <string name="vault_book">Vault</string>
     <string name="vault_books">Vaults</string>
+    <string name="vault_my_books">My vaults</string>
+    <string name="vault_dark_mode">Dark mode</string>
     <string name="vault_manage_books">Manage vaults</string>
     <string name="vault_tags">Tags</string>
     <string name="vault_type">Type</string>

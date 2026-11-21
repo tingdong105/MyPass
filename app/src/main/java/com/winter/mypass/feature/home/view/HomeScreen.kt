@@ -1,10 +1,12 @@
 package com.winter.mypass.feature.home.view
 
+import android.animation.ValueAnimator
 import android.view.HapticFeedbackConstants
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedContentTransitionScope.SlideDirection
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.EnterExitState
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.animateContentSize
@@ -21,8 +23,10 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.MutatePriority
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.stopScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -51,22 +55,37 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.ClipOp
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
@@ -90,6 +109,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.winter.mypass.R
 import com.winter.mypass.feature.home.model.CategoryKind
@@ -104,8 +125,11 @@ import com.winter.mypass.feature.home.viewmodel.VaultPage
 import com.winter.mypass.feature.home.viewmodel.VaultState
 import com.winter.mypass.feature.home.viewmodel.VaultTab
 import com.winter.mypass.feature.home.viewmodel.VaultViewModel
+import com.winter.mypass.ui.theme.LocalAppTheme
+import com.winter.mypass.ui.theme.LocalDarkTheme
 import com.winter.mypass.ui.theme.MyPassTheme
 import com.winter.mypass.ui.theme.Theme
+import kotlinx.coroutines.launch
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.CardDefaults
 import top.yukonga.miuix.kmp.basic.Checkbox
@@ -215,56 +239,64 @@ internal fun VaultScreen(model: VaultViewModel, onBackup: () -> Unit, onChangeCr
                     onDelete = model::deleteFromGenerationHistory,
                 )
             } else {
-                VaultTopLevel(
-                    state = screen,
-                    snapshot = snapshot,
+                VaultThemeLayers(
                     list = list,
-                    active = active && page == null,
-                    onTab = model::selectTab,
-                    onBook = model::selectBook,
-                    onManage = model::manage,
-                    onQuery = model::search,
-                    onSort = model::sort,
-                    onPasswordPreview = model::setPasswordPreview,
-                    onChangeCredential = onChangeCredential,
-                    onBackup = onBackup,
-                    onClear = model::clearProblem,
-                    onOpen = model::openDetail,
-                    onAdd = model::newPassword,
-                    onGeneratorOptions = model::generatorOptions,
-                    onRefreshGenerated = model::refreshGeneratedPassword,
-                    onCopyGenerated = model::copyGenerated,
-                    onOpenGenerationHistory = model::openGenerationHistory,
-                    onToggleSelection = model::togglePasswordSelection,
-                    onClearSelection = model::clearPasswordSelection,
-                    onDeleteSelected = model::deleteSelectedPasswords,
-                ) {
-                    if (active) when (page) {
-                        is VaultPage.Detail -> PasswordDetailSheet(
-                            detail = page,
-                            snapshot = snapshot,
-                            busy = screen.busy,
-                            problem = screen.problem,
-                            onDismiss = model::dismissPasswordDetail,
-                            onDismissFinished = model::finishPasswordDetailDismissal,
-                            onEdit = model::editPassword,
-                            onDelete = model::deletePassword,
-                            onCopy = model::copyText,
-                        )
-                        is VaultPage.Editor -> PasswordFormSheet(
-                            editor = page,
-                            snapshot = snapshot,
-                            busy = screen.busy,
-                            problem = screen.problem,
-                            passwordClipboard = model.passwordEditorClipboard,
-                            onDraft = model::editDraft,
-                            onSave = model::savePassword,
-                            onDismiss = model::dismissPasswordEditor,
-                            onDismissFinished = model::finishPasswordEditorDismissal,
-                            onDiscard = model::confirmPasswordDiscard,
-                            onClearProblem = model::clearProblem,
-                        )
-                        else -> Unit
+                    empty = screen.tab == VaultTab.Home && snapshot.passwords.isEmpty() && screen.query.isBlank(),
+                ) { workspace, themeToggle, emptyPlayback, outgoing ->
+                    VaultTopLevel(
+                        state = screen,
+                        snapshot = snapshot,
+                        workspace = workspace,
+                        themeToggle = themeToggle,
+                        emptyPlayback = emptyPlayback,
+                        outgoing = outgoing,
+                        active = active && page == null,
+                        onTab = model::selectTab,
+                        onBook = model::selectBook,
+                        onManage = model::manage,
+                        onQuery = model::search,
+                        onSort = model::sort,
+                        onPasswordPreview = model::setPasswordPreview,
+                        onChangeCredential = onChangeCredential,
+                        onBackup = onBackup,
+                        onClear = model::clearProblem,
+                        onOpen = model::openDetail,
+                        onAdd = model::newPassword,
+                        onGeneratorOptions = model::generatorOptions,
+                        onRefreshGenerated = model::refreshGeneratedPassword,
+                        onCopyGenerated = model::copyGenerated,
+                        onOpenGenerationHistory = model::openGenerationHistory,
+                        onToggleSelection = model::togglePasswordSelection,
+                        onClearSelection = model::clearPasswordSelection,
+                        onDeleteSelected = model::deleteSelectedPasswords,
+                    ) {
+                        if (active && !outgoing) when (page) {
+                            is VaultPage.Detail -> PasswordDetailSheet(
+                                detail = page,
+                                snapshot = snapshot,
+                                busy = screen.busy,
+                                problem = screen.problem,
+                                onDismiss = model::dismissPasswordDetail,
+                                onDismissFinished = model::finishPasswordDetailDismissal,
+                                onEdit = model::editPassword,
+                                onDelete = model::deletePassword,
+                                onCopy = model::copyText,
+                            )
+                            is VaultPage.Editor -> PasswordFormSheet(
+                                editor = page,
+                                snapshot = snapshot,
+                                busy = screen.busy,
+                                problem = screen.problem,
+                                passwordClipboard = model.passwordEditorClipboard,
+                                onDraft = model::editDraft,
+                                onSave = model::savePassword,
+                                onDismiss = model::dismissPasswordEditor,
+                                onDismissFinished = model::finishPasswordEditorDismissal,
+                                onDiscard = model::confirmPasswordDiscard,
+                                onClearProblem = model::clearProblem,
+                            )
+                            else -> Unit
+                        }
                     }
                 }
             }
@@ -291,10 +323,111 @@ private fun VaultLoading(state: VaultState, retry: () -> Unit) {
 }
 
 /**
+ * 首页列表与侧栏的界面状态。
+ * @author Tingdong
+ * @date 2026-11-22
+ */
+private class VaultWorkspace(
+    val passwords: LazyListState,
+    val books: LazyListState = LazyListState(),
+    drawerOpen: Boolean = false,
+) {
+    var drawerOpen by mutableStateOf(drawerOpen)
+
+    /**
+     * 为旧主题创建独立的滚动状态，使用点击时的列表位置。
+     * @return 可供旧主题绘制的界面状态
+     */
+    fun copyForReveal() = VaultWorkspace(
+        passwords = LazyListState(passwords.firstVisibleItemIndex, passwords.firstVisibleItemScrollOffset),
+        books = LazyListState(books.firstVisibleItemIndex, books.firstVisibleItemScrollOffset),
+        drawerOpen = drawerOpen,
+    )
+}
+
+/**
+ * 在同一位置绘制两套主题，裁剪旧主题形成圆形过渡。
+ * @param list 首页列表的滚动状态
+ * @param empty 是否展示空密码本动画
+ * @param showDrawerInitially 是否在首次绘制时展开侧栏
+ * @param content 首页布局、主题操作与共用动画进度
+ */
+@Composable
+private fun VaultThemeLayers(
+    list: LazyListState,
+    empty: Boolean,
+    showDrawerInitially: Boolean = false,
+    content: @Composable (VaultWorkspace, ((Offset) -> Unit)?, VaultEmptyPlayback?, Boolean) -> Unit,
+) {
+    val theme = LocalAppTheme.current
+    val dark = LocalDarkTheme.current
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    val scope = rememberCoroutineScope()
+    val workspace = remember(list) { VaultWorkspace(list, drawerOpen = showDrawerInitially) }
+    val emptyPlayback = if (empty) rememberVaultEmptyPlayback() else null
+    var previous by remember { mutableStateOf<VaultWorkspace?>(null) }
+    val reveal = theme?.reveal
+    val outgoing = previous
+    val switching = reveal != null && outgoing != null
+    LaunchedEffect(reveal) {
+        if (reveal == null) previous = null
+    }
+    val switchTheme: ((Offset) -> Unit)? = if (theme?.ready == true && !switching) {
+        { center ->
+            scope.launch {
+                workspace.passwords.stopScroll(MutatePriority.PreventUserInput)
+                workspace.books.stopScroll(MutatePriority.PreventUserInput)
+                if (theme.reveal == null && lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+                    val animate = center.x.isFinite() && center.y.isFinite() && ValueAnimator.areAnimatorsEnabled()
+                    theme.toggle(dark, center, animate)
+                    if (theme.reveal != null) previous = workspace.copyForReveal()
+                }
+            }
+        }
+    } else null
+    val input = if (switching) Modifier.onPreviewKeyEvent { true }.pointerInput(Unit) {
+        awaitPointerEventScope {
+            while (true) {
+                awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() }
+            }
+        }
+    }.blockVaultBackgroundFocus() else Modifier
+
+    Box(Modifier.fillMaxSize().then(input)) {
+        content(workspace, switchTheme, emptyPlayback, false)
+        if (reveal != null && outgoing != null) {
+            var origin by remember { mutableStateOf(Offset.Zero) }
+            Box(
+                Modifier.matchParentSize().blockVaultBackgroundFocus()
+                    .onGloballyPositioned { origin = it.positionInRoot() }
+                    .drawWithCache {
+                        val circle = Path()
+                        onDrawWithContent {
+                            val center = reveal.center - origin
+                            val radius = reveal.radius(size.width, size.height, center)
+                            circle.reset()
+                            circle.addOval(Rect(center, radius))
+                            clipPath(circle, if (reveal.fromDark) ClipOp.Intersect else ClipOp.Difference) {
+                                this@onDrawWithContent.drawContent()
+                            }
+                        }
+                    },
+            ) {
+                MyPassTheme(darkTheme = reveal.fromDark) { content(outgoing, null, emptyPlayback, true) }
+            }
+        }
+    }
+    BackHandler(enabled = switching) { }
+}
+
+/**
  * 组织首页、生成及设置的统一导航，并处理搜索键盘与侧栏。
  * @param state 当前页面及操作状态
+ * @param workspace 列表与抽屉的界面状态
+ * @param themeToggle 接收按钮中心的主题切换回调
+ * @param emptyPlayback 空密码本动画的共用播放状态
+ * @param outgoing 是否正在绘制退出的主题
  * @param snapshot 当前本和分类数据
- * @param list 详情返回时恢复的列表位置
  * @param active 当前页面是否在前台
  * @param onTab 切换底部入口
  * @param onBook 切换当前密码本
@@ -320,7 +453,10 @@ private fun VaultLoading(state: VaultState, retry: () -> Unit) {
 private fun VaultTopLevel(
     state: VaultState,
     snapshot: VaultSnapshot,
-    list: LazyListState,
+    workspace: VaultWorkspace,
+    themeToggle: ((Offset) -> Unit)?,
+    emptyPlayback: VaultEmptyPlayback?,
+    outgoing: Boolean,
     active: Boolean,
     onTab: (VaultTab) -> Unit,
     onBook: (Long) -> Unit,
@@ -342,7 +478,6 @@ private fun VaultTopLevel(
     onDeleteSelected: () -> Unit,
     overlays: @Composable () -> Unit = {},
 ) {
-    var drawer by remember { mutableStateOf(false) }
     val selected = state.selectedPasswordIds
     val selecting = selected.isNotEmpty()
     var confirmingDelete by remember(snapshot.bookId, state.tab, state.query, selecting, active) { mutableStateOf(false) }
@@ -354,11 +489,11 @@ private fun VaultTopLevel(
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val docked = maxWidth >= VaultLayout.DockedSidebarBreakpoint
         val home = state.tab == VaultTab.Home
-        val drawerVisible = drawer && home && !docked
-        BackHandler(active && !keyboard && (drawerVisible || !home)) {
-            if (drawerVisible) drawer = false else onTab(VaultTab.Home)
+        val drawerVisible = workspace.drawerOpen && home && !docked
+        BackHandler(!outgoing && active && !keyboard && (drawerVisible || !home)) {
+            if (drawerVisible) workspace.drawerOpen = false else onTab(VaultTab.Home)
         }
-        BackHandler(active && home && selecting) {
+        BackHandler(!outgoing && active && home && selecting && !drawerVisible) {
             if (deleteConfirmationOpen) confirmingDelete = false else onClearSelection()
         }
         Scaffold(
@@ -439,7 +574,7 @@ private fun VaultTopLevel(
                                         onOpenBooks = if (homePage) {
                                             {
                                                 focus.clearFocus()
-                                                drawer = true
+                                                workspace.drawerOpen = true
                                             }
                                         } else null,
                                         onClearSelection = if (selecting && homePage) onClearSelection else null,
@@ -469,7 +604,8 @@ private fun VaultTopLevel(
                             if (docked) {
                                 BookSidebar(
                                     snapshot, state.busy, Modifier.width(VaultLayout.DockedSidebarWidth).fillMaxHeight(),
-                                    onBook, { onManage(CategoryKind.Book) },
+                                    workspace.books, onBook, { onManage(CategoryKind.Book) },
+                                    onToggleTheme = themeToggle.takeIf { active && home && !keyboard && !modalOpen },
                                 )
                                 VerticalDivider()
                             }
@@ -481,9 +617,9 @@ private fun VaultTopLevel(
                                     actions = sortAction,
                                 )
                                 PasswordList(
-                                    state, snapshot, list, Modifier.fillMaxWidth().weight(1f),
+                                    state, snapshot, workspace.passwords, Modifier.fillMaxWidth().weight(1f),
                                     active && home && !drawerVisible && !deleteConfirmationOpen,
-                                    onQuery, onOpen, onToggleSelection,
+                                    onQuery, onOpen, onToggleSelection, emptyPlayback,
                                 )
                             }
                         }
@@ -516,15 +652,17 @@ private fun VaultTopLevel(
             )
         }
         if (!docked && home && !modalOpen) BookDrawer(
-            drawerVisible, snapshot, state.busy, onDismiss = { drawer = false },
+            drawerVisible, snapshot, state.busy, workspace.books,
+            onDismiss = { workspace.drawerOpen = false },
             onSelect = {
-                drawer = false
+                workspace.drawerOpen = false
                 onBook(it)
             },
             onManage = {
-                drawer = false
+                workspace.drawerOpen = false
                 onManage(CategoryKind.Book)
             },
+            onToggleTheme = themeToggle.takeIf { active && !keyboard },
         )
     }
 }
@@ -565,7 +703,7 @@ private fun VaultTabHeader(
             )
         } else if (onOpenBooks != null) {
             VaultIcon(
-                ImageVector.vectorResource(R.drawable.ic_vault_menu), R.string.vault_books,
+                ImageVector.vectorResource(R.drawable.ic_vault_menu), R.string.vault_my_books,
                 onClick = onOpenBooks, iconSize = VaultLayout.HomeHeaderIconSize,
             )
         }
@@ -658,6 +796,7 @@ private fun PasswordActionFab(selecting: Boolean, enabled: Boolean, onClick: () 
  * @param onQuery 修改当前搜索
  * @param onOpen 打开详情
  * @param onToggleSelection 切换密码选择状态
+ * @param emptyPlayback 空托盘动画进度
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -670,6 +809,7 @@ private fun PasswordList(
     onQuery: (String) -> Unit,
     onOpen: (Long) -> Unit,
     onToggleSelection: (Long) -> Unit,
+    emptyPlayback: VaultEmptyPlayback?,
 ) {
     val focus = LocalFocusManager.current
     val locale = LocalConfiguration.current.locales[0]
@@ -712,7 +852,7 @@ private fun PasswordList(
                     item(key = "empty") {
                         Box(Modifier.fillParentMaxSize(), contentAlignment = Alignment.Center) {
                             if (state.query.isBlank()) {
-                                VaultEmptyState()
+                                VaultEmptyState(playback = emptyPlayback)
                             } else {
                                 Column(
                                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -780,10 +920,12 @@ private fun PasswordListCard(
 ) {
     val colors = MiuixTheme.colorScheme
     val view = LocalView.current
-    val background by animateColorAsState(
-        if (checked) colors.primary.copy(alpha = 0.12f).compositeOver(colors.surfaceContainer) else colors.surfaceContainer,
-        spring(dampingRatio = 0.9f, stiffness = 450f), label = "Password selection color",
-    )
+    val background by key(LocalDarkTheme.current) {
+        animateColorAsState(
+            if (checked) colors.primary.copy(alpha = 0.12f).compositeOver(colors.surfaceContainer) else colors.surfaceContainer,
+            spring(dampingRatio = 0.9f, stiffness = 450f), label = "Password selection color",
+        )
+    }
     val scale by animateFloatAsState(
         if (checked) 0.98f else 1f,
         spring(dampingRatio = 0.65f, stiffness = 450f), label = "Password selection scale",
@@ -839,10 +981,12 @@ private fun PasswordListCard(
                 label = "Password selection indicator",
             ) { selectionMode ->
                 if (selectionMode) {
-                    Checkbox(
-                        if (checked) ToggleableState.On else ToggleableState.Off,
-                        onClick = null, enabled = enabled,
-                    )
+                    key(LocalDarkTheme.current) {
+                        Checkbox(
+                            if (checked) ToggleableState.On else ToggleableState.Off,
+                            onClick = null, enabled = enabled,
+                        )
+                    }
                 } else Icon(
                     MiuixIcons.ChevronForward, null, Modifier.size(Theme.spacing.medium),
                     tint = colors.onSurfaceVariantSummary,
@@ -857,18 +1001,22 @@ private fun PasswordListCard(
  * @param show 当前是否展开
  * @param snapshot 可切换的密码本
  * @param busy 是否正在读取
+ * @param list 侧栏列表的滚动位置
  * @param onDismiss 收起侧栏
  * @param onSelect 切换密码本
  * @param onManage 打开管理
+ * @param onToggleTheme 切换应用主题
  */
 @Composable
 private fun BookDrawer(
     show: Boolean,
     snapshot: VaultSnapshot,
     busy: Boolean,
+    list: LazyListState,
     onDismiss: () -> Unit,
     onSelect: (Long) -> Unit,
     onManage: () -> Unit,
+    onToggleTheme: ((Offset) -> Unit)?,
 ) {
     val direction = if (LocalLayoutDirection.current == LayoutDirection.Ltr) -1 else 1
     val scrim = Color.Black.copy(alpha = 0.40f)
@@ -888,7 +1036,8 @@ private fun BookDrawer(
                 snapshot, busy,
                 Modifier.width(VaultLayout.DrawerWidth).fillMaxHeight().background(MiuixTheme.colorScheme.surface)
                     .windowInsetsPadding(WindowInsets.safeDrawing),
-                onSelect, onManage, onDismiss,
+                list, onSelect, onManage,
+                onToggleTheme = onToggleTheme.takeIf { show && transition.currentState == EnterExitState.Visible },
             )
         }
     }
@@ -899,70 +1048,100 @@ private fun BookDrawer(
  * @param snapshot 当前密码本列表
  * @param busy 是否正在切换
  * @param modifier 侧栏位置
+ * @param list 侧栏列表的滚动位置
  * @param onSelect 切换密码本
  * @param onManage 进入管理
- * @param onDismiss 手机侧栏的关闭动作
+ * @param onToggleTheme 切换应用主题
  */
 @Composable
 private fun BookSidebar(
     snapshot: VaultSnapshot,
     busy: Boolean,
     modifier: Modifier,
+    list: LazyListState,
     onSelect: (Long) -> Unit,
     onManage: () -> Unit,
-    onDismiss: (() -> Unit)? = null,
+    onToggleTheme: ((Offset) -> Unit)?,
 ) {
     val colors = MiuixTheme.colorScheme
-    Column(
-        modifier.padding(horizontal = Theme.spacing.medium, vertical = Theme.spacing.large),
-        verticalArrangement = Arrangement.spacedBy(Theme.spacing.medium),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                stringResource(R.string.vault_books), Modifier.weight(1f).padding(start = Theme.spacing.small),
-                style = MiuixTheme.textStyles.title3,
-            )
-            if (onDismiss != null) VaultIcon(MiuixIcons.Close, R.string.vault_close, onClick = onDismiss)
+    Column(modifier) {
+        VaultTabHeader(stringResource(R.string.vault_my_books), includeWindowInsets = false) {
+            VaultThemeToggle(onToggleTheme)
         }
-        LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Theme.spacing.small)) {
-            items(snapshot.books, key = { it.id }) { book ->
-                val selected = book.id == snapshot.bookId
-                val tint = colors.onSurface
-                Row(
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(15.dp))
-                        .background(if (selected) colors.primary.copy(alpha = 0.15f) else colors.surface)
-                        .selectable(selected, enabled = !busy, role = Role.RadioButton) { onSelect(book.id) }
-                        .padding(Theme.spacing.medium),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(Theme.spacing.medium),
-                ) {
-                    Icon(if (selected) MiuixIcons.FolderFill else MiuixIcons.Folder, null, Modifier.size(20.dp), tint = tint)
-                    Text(book.name, Modifier.weight(1f), tint, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    Text(book.entryCount.toString(), color = tint, style = MiuixTheme.textStyles.body2.copy(fontFeatureSettings = "tnum"))
+        Column(
+            Modifier.weight(1f).fillMaxWidth().padding(horizontal = Theme.spacing.medium)
+                .padding(top = Theme.spacing.small, bottom = Theme.spacing.large),
+            verticalArrangement = Arrangement.spacedBy(Theme.spacing.medium),
+        ) {
+            LazyColumn(Modifier.weight(1f), state = list, verticalArrangement = Arrangement.spacedBy(Theme.spacing.small)) {
+                items(snapshot.books, key = { it.id }) { book ->
+                    val selected = book.id == snapshot.bookId
+                    val tint = colors.onSurface
+                    Row(
+                        Modifier.fillMaxWidth().clip(RoundedCornerShape(15.dp))
+                            .background(if (selected) colors.primary.copy(alpha = 0.15f) else colors.surface)
+                            .selectable(selected, enabled = !busy, role = Role.RadioButton) { onSelect(book.id) }
+                            .padding(Theme.spacing.medium),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(Theme.spacing.medium),
+                    ) {
+                        Icon(if (selected) MiuixIcons.FolderFill else MiuixIcons.Folder, null, Modifier.size(20.dp), tint = tint)
+                        Text(book.name, Modifier.weight(1f), tint, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                        Text(book.entryCount.toString(), color = tint, style = MiuixTheme.textStyles.body2.copy(fontFeatureSettings = "tnum"))
+                    }
                 }
             }
+            HorizontalDivider()
+            VaultLink(stringResource(R.string.vault_manage_books), enabled = !busy, icon = MiuixIcons.Folder, onClick = onManage)
         }
-        HorizontalDivider()
-        VaultLink(stringResource(R.string.vault_manage_books), enabled = !busy, icon = MiuixIcons.Folder, onClick = onManage)
+    }
+}
+
+/**
+ * 显示太阳或月亮，并以按钮中心作为主题过渡圆心。
+ * @param onToggle 接收 Compose 根区域内的圆心，空值时禁用开关
+ */
+@Composable
+private fun VaultThemeToggle(onToggle: ((Offset) -> Unit)?) {
+    val dark = LocalDarkTheme.current
+    var coordinates by remember { mutableStateOf<LayoutCoordinates?>(null) }
+    val label = stringResource(R.string.vault_dark_mode)
+    Box(
+        Modifier.size(Theme.sizes.minimumTouchTarget).clip(RoundedCornerShape(50))
+            .onGloballyPositioned { coordinates = it }
+            .semantics { contentDescription = label }
+            .toggleable(value = dark, enabled = onToggle != null, role = Role.Switch) {
+                val button = coordinates?.takeIf { it.isAttached }
+                val center = button?.localToRoot(Offset(button.size.width / 2f, button.size.height / 2f))
+                onToggle?.invoke(center ?: Offset.Unspecified)
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        VaultThemeIcon(Modifier.size(VaultLayout.HomeHeaderIconSize))
     }
 }
 
 /**
  * 使用和应用一致的顶层容器渲染预览。
  * @param state 预览页面及样例数据
+ * @param showDrawer 是否展开手机侧栏
  */
 @Composable
-internal fun VaultTabbedPreview(state: VaultState) {
+internal fun VaultTabbedPreview(state: VaultState, showDrawer: Boolean = false) {
     val snapshot = state.snapshot ?: previewSnapshot(state.passwordPreview)
     MyPassTheme {
-        VaultTopLevel(
-            state = state.copy(snapshot = snapshot), snapshot = snapshot,
-            list = remember { LazyListState() }, active = true,
-            onTab = {}, onBook = {}, onManage = {}, onQuery = {}, onSort = {}, onPasswordPreview = {},
-            onChangeCredential = {}, onBackup = {}, onClear = {}, onOpen = {}, onAdd = {}, onGeneratorOptions = {},
-            onRefreshGenerated = {}, onCopyGenerated = { _, _ -> }, onOpenGenerationHistory = {},
-            onToggleSelection = {}, onClearSelection = {}, onDeleteSelected = {},
-        )
+        VaultThemeLayers(
+            remember { LazyListState() }, snapshot.passwords.isEmpty(), showDrawer,
+        ) { workspace, themeToggle, emptyPlayback, outgoing ->
+            VaultTopLevel(
+                state = state.copy(snapshot = snapshot), snapshot = snapshot, active = true,
+                workspace = workspace, themeToggle = themeToggle, emptyPlayback = emptyPlayback, outgoing = outgoing,
+                onTab = {}, onBook = {}, onManage = {}, onQuery = {}, onSort = {}, onPasswordPreview = {},
+                onChangeCredential = {}, onBackup = {}, onClear = {}, onOpen = {}, onAdd = {}, onGeneratorOptions = {},
+                onRefreshGenerated = {}, onCopyGenerated = { _, _ -> }, onOpenGenerationHistory = {},
+                onToggleSelection = {}, onClearSelection = {}, onDeleteSelected = {},
+            )
+        }
     }
 }
 
@@ -973,6 +1152,15 @@ internal fun VaultTabbedPreview(state: VaultState) {
 @Composable
 internal fun VaultHomePreview() {
     VaultTabbedPreview(VaultState())
+}
+
+/**
+ * 预览手机抽屉和大屏固定密码本侧栏。
+ */
+@VaultPreviews
+@Composable
+internal fun VaultBookSidebarPreview() {
+    VaultTabbedPreview(VaultState(), showDrawer = true)
 }
 
 /**

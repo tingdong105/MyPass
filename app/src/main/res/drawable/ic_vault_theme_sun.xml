@@ -1,0 +1,20 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:name="body"
+        android:pathData="M12,7.5 C9.515,7.5 7.5,9.515 7.5,12 C7.5,14.485 9.515,16.5 12,16.5 C14.485,16.5 16.5,14.485 16.5,12 C16.5,9.515 14.485,7.5 12,7.5 Z"
+        android:strokeColor="#FF000000"
+        android:strokeWidth="1.8"
+        android:strokeLineJoin="round" />
+    <group android:name="light" android:pivotX="12" android:pivotY="12">
+        <path
+            android:name="rays"
+            android:pathData="M12,2.5v2M12,19.5v2M2.5,12h2M19.5,12h2M5.3,5.3l1.4,1.4M17.3,17.3l1.4,1.4M18.7,5.3l-1.4,1.4M6.7,17.3l-1.4,1.4"
+            android:strokeColor="#FF000000"
+            android:strokeWidth="1.8"
+            android:strokeLineCap="round" />
+    </group>
+</vector>

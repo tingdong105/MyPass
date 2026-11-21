@@ -5,12 +5,15 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import top.yukonga.miuix.kmp.theme.ColorSchemeMode
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 import top.yukonga.miuix.kmp.theme.ThemeController
+
+internal val LocalDarkTheme = staticCompositionLocalOf { false }
 
 /**
  * 通用界面间距与尺寸。
@@ -53,7 +56,10 @@ fun MyPassTheme(
     }
 
     val density = LocalDensity.current
-    CompositionLocalProvider(LocalDensity provides Density(density.density, fontScale = 1f)) {
+    CompositionLocalProvider(
+        LocalDensity provides Density(density.density, fontScale = 1f),
+        LocalDarkTheme provides darkTheme,
+    ) {
         MiuixTheme(
             controller = controller,
             content = content,

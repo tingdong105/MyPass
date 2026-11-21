@@ -18,9 +18,11 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.airbnb.lottie.LottieComposition
 import com.airbnb.lottie.LottieCompositionFactory
 import com.airbnb.lottie.LottieProperty
 import com.airbnb.lottie.compose.LottieAnimation
+import com.airbnb.lottie.compose.LottieAnimationState
 import com.airbnb.lottie.compose.LottieCompositionSpec
 import com.airbnb.lottie.compose.LottieConstants
 import com.airbnb.lottie.compose.animateLottieCompositionAsState
@@ -40,17 +42,32 @@ private val EmptyVaultIllustrationWidth = 136.dp
 private val EmptyVaultIllustrationHeight = 112.dp
 
 /**
+ * 保存可由不同配色共用的空托盘动画进度。
+ * @author Tingdong
+ * @date 2026-11-22
+ */
+internal class VaultEmptyPlayback(
+    val composition: LottieComposition?,
+    val failed: Boolean,
+    val animation: LottieAnimationState,
+)
+
+/**
  * 以轻缓循环的空托盘和本地化文案呈现空密码本。
  * @param modifier 空状态的布局修饰符
+ * @param playback 空托盘动画的共用状态
  */
 @Composable
-internal fun VaultEmptyState(modifier: Modifier = Modifier) {
+internal fun VaultEmptyState(
+    modifier: Modifier = Modifier,
+    playback: VaultEmptyPlayback? = null,
+) {
     Column(
         modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(Theme.spacing.small),
     ) {
-        VaultEmptyIllustration()
+        VaultEmptyIllustration(playback ?: rememberVaultEmptyPlayback())
         Text(
             stringResource(R.string.vault_empty),
             color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
@@ -61,9 +78,10 @@ internal fun VaultEmptyState(modifier: Modifier = Modifier) {
 
 /**
  * 从本地加载空托盘动画，应用退至后台或关闭系统动画时保留静态画面。
+ * @return 动画资源及当前进度
  */
 @Composable
-private fun VaultEmptyIllustration() {
+internal fun rememberVaultEmptyPlayback(): VaultEmptyPlayback {
     val inspecting = LocalInspectionMode.current
     val result = if (inspecting) {
         val context = LocalContext.current
@@ -80,13 +98,22 @@ private fun VaultEmptyIllustration() {
         val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateFlow.collectAsState()
         lifecycle.isAtLeast(Lifecycle.State.RESUMED) && ValueAnimator.areAnimatorsEnabled()
     }
-    val playback = animateLottieCompositionAsState(
+    val animation = animateLottieCompositionAsState(
         composition = composition,
         isPlaying = canAnimate,
         restartOnPlay = false,
         iterations = LottieConstants.IterateForever,
         useCompositionFrameRate = true,
     )
+    return remember(composition, failed, animation) { VaultEmptyPlayback(composition, failed, animation) }
+}
+
+/**
+ * 使用当前配色绘制空托盘动画。
+ * @param playback 正在播放的动画
+ */
+@Composable
+private fun VaultEmptyIllustration(playback: VaultEmptyPlayback) {
     val colors = MiuixTheme.colorScheme
     val dynamicColors = rememberLottieDynamicProperties(
         rememberLottieDynamicProperty(LottieProperty.STROKE_COLOR, colors.onSurfaceVariantSummary.toArgb(), "**", "Tray line"),
@@ -95,7 +122,7 @@ private fun VaultEmptyIllustration() {
         rememberLottieDynamicProperty(LottieProperty.COLOR, colors.onSurface.toArgb(), "**", "Tray shadow"),
     )
     val size = Modifier.size(EmptyVaultIllustrationWidth, EmptyVaultIllustrationHeight)
-    if (failed) {
+    if (playback.failed) {
         Box(size, contentAlignment = Alignment.Center) {
             Icon(
                 imageVector = MiuixIcons.Folder,
@@ -105,6 +132,8 @@ private fun VaultEmptyIllustration() {
             )
         }
     } else {
-        LottieAnimation(composition, progress = { playback.progress }, modifier = size, dynamicProperties = dynamicColors)
+        LottieAnimation(
+            playback.composition, progress = { playback.animation.progress }, modifier = size, dynamicProperties = dynamicColors,
+        )
     }
 }
