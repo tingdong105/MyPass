@@ -57,7 +57,9 @@ class MainActivity : ComponentActivity() {
      */
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        if (!BuildConfig.isDebug) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        }
         enableEdgeToEdge(navigationBarStyle = SystemBarStyle.auto(0x00000000, 0x00000000))
         setContent {
             BackupDocumentHost {

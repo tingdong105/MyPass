@@ -12,6 +12,9 @@ plugins {
     alias(libs.plugins.androidx.room)
 }
 
+// 调试模式开关
+val isDebug = true
+
 // APP版本名称
 val appVerName = "Beta-1.0.0"
 
@@ -36,6 +39,7 @@ android {
         targetSdk = 37
         versionCode = appVerCode()
         versionName = appVerName
+        buildConfigField("boolean", "isDebug", isDebug.toString())
 
         ndk {
             //noinspection ChromeOsAbiSupport
@@ -73,6 +77,7 @@ android {
         targetCompatibility = JavaVersion.VERSION_11
     }
     buildFeatures {
+        buildConfig = true
         compose = true
     }
 }
