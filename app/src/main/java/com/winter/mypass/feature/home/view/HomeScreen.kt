@@ -78,6 +78,7 @@ import com.winter.mypass.R
 import com.winter.mypass.feature.home.model.CategoryKind
 import com.winter.mypass.feature.home.model.PasswordPreviewSettings
 import com.winter.mypass.feature.home.model.PasswordSummary
+import com.winter.mypass.feature.home.model.VaultCategory
 import com.winter.mypass.feature.home.model.VaultSnapshot
 import com.winter.mypass.feature.home.model.VaultSort
 import com.winter.mypass.feature.home.viewmodel.DetailPhase
@@ -613,6 +614,7 @@ private fun PasswordList(
                     items(entries, key = { it.id }) { entry ->
                         PasswordListCard(
                             entry = entry,
+                            type = snapshot.type(entry.typeId),
                             enabled = !state.busy && state.page == null,
                             onOpen = {
                                 focus.clearFocus()
@@ -629,12 +631,14 @@ private fun PasswordList(
 /**
  * 用原生按压卡片显示平台、密码与用户名。
  * @param entry 当前记录摘要
+ * @param type 记录关联的密码类型
  * @param enabled 当前是否可以操作
  * @param onOpen 打开详情
  */
 @Composable
 private fun PasswordListCard(
     entry: PasswordSummary,
+    type: VaultCategory?,
     enabled: Boolean,
     onOpen: () -> Unit,
 ) {
@@ -651,7 +655,7 @@ private fun PasswordListCard(
             horizontalArrangement = Arrangement.spacedBy(Theme.spacing.medium),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            VaultGlyph(entry.platform)
+            VaultGlyph(entry.platform, type)
             Column(Modifier.weight(1f)) {
                 Text(entry.platform, style = MiuixTheme.textStyles.title3, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(

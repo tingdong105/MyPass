@@ -235,7 +235,10 @@ internal fun CategoryPicker(
                         onDraft { it.copy(bookId = item.id) }
                         onDismiss()
                     }
-                    CategoryKind.Type -> VaultChoice(item.name, item.id == draft.typeId) {
+                    CategoryKind.Type -> VaultChoice(
+                        item.name, item.id == draft.typeId,
+                        leading = { VaultGlyph(item.name, item) },
+                    ) {
                         onDraft { it.copy(typeId = item.id) }
                         onDismiss()
                     }
@@ -427,7 +430,10 @@ private fun CategoryRow(
     BasicComponent(
         title = item.name,
         summary = pluralStringResource(R.plurals.vault_record_count, item.entryCount, item.entryCount),
-        startAction = { Icon(icon, null, Modifier.size(22.dp)) },
+        startAction = {
+            if (kind == CategoryKind.Type) VaultGlyph(item.name, item)
+            else Icon(icon, null, Modifier.size(22.dp))
+        },
         endActions = {
             if (!item.builtIn) Box {
                 VaultIcon(MiuixIcons.More, R.string.vault_category_actions, enabled) { menu = true }
@@ -684,14 +690,17 @@ internal fun previewSnapshot(preview: PasswordPreviewSettings = PasswordPreviewS
     return VaultSnapshot(
         books = listOf(VaultCategory(1, "个人密码本", 5), VaultCategory(2, "工作密码本", 0)),
         tags = listOf(work),
-        types = listOf(VaultCategory(1, "APP", 2), VaultCategory(2, "Web", 3)),
+        types = listOf(
+            VaultCategory(1, "软件", 2, "software"), VaultCategory(2, "网站", 1, "website"),
+            VaultCategory(3, "小程序", 1, "miniapp"), VaultCategory(4, "银行卡", 1),
+        ),
         bookId = 1,
         passwords = listOf(
             PasswordSummary(1, 1, "GitHub", "winter@example.com", "https://github.com", 2, 0, 5, preview.display("preview-secret")),
             PasswordSummary(2, 1, "微信", "tingdong", null, 1, 0, 4, preview.display("W8-68!")),
-            PasswordSummary(3, 1, "Notion", "winter@example.com", "https://notion.com", 2, 0, 3, preview.display("notes#636")),
+            PasswordSummary(3, 1, "记账小程序", "winter@example.com", null, 3, 0, 3, preview.display("notes#636")),
             PasswordSummary(4, 1, "哔哩哔哩", "听冬酱", null, 1, 0, 2, preview.display("bili-2468")),
-            PasswordSummary(5, 1, "豆瓣", null, "https://douban.com", 2, 0, 1, preview.display("bd")),
+            PasswordSummary(5, 1, "储蓄卡", null, null, 4, 0, 1, preview.display("bd")),
         ),
         tagsByPassword = mapOf(1L to listOf(work), 3L to listOf(work)),
     )

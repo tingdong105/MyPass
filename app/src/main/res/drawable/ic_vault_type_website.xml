@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="38dp"
+    android:height="38dp"
+    android:viewportWidth="64"
+    android:viewportHeight="64">
+    <path
+        android:pathData="M10 32a22 22 0 1 0 44 0a22 22 0 1 0 -44 0"
+        android:fillColor="#7CD4F6"
+        android:fillAlpha="0.94" />
+    <path
+        android:pathData="M12 40C21 49 41 49 51.5 39C48.7 49.2 41.3 54 32 54C22.7 54 15.2 49.2 12 40Z"
+        android:fillColor="#39B4E8"
+        android:fillAlpha="0.30" />
+    <path
+        android:pathData="M16 17C20 13 25 11 30 11C31.5 13 29 15.5 26.5 17C25 18 25 20 27 21C30 22.5 29 26 26.5 27L23.5 28.3C21 29.7 21 32.2 18.5 31.5L14 30C11.5 29.1 10.8 26.6 12.8 24L16 20Q18 18 16 17Z"
+        android:fillColor="#C5F3E7"
+        android:fillAlpha="0.98" />
+    <path
+        android:pathData="M23.5 34C26 32 29 33 31 35L34 38C36 40 34 43 31.5 44L29 47C27 50.5 24 52 23 49L22 43C19.5 40.5 20 37 23.5 34Z"
+        android:fillColor="#C5F3E7"
+        android:fillAlpha="0.98" />
+    <path
+        android:pathData="M42 14C46 16 49.5 19 51.5 23C49.5 24 45 22.7 43 25C41.5 26.8 38 26 37 24L35 21C33.5 18 36.5 16 39 17Z"
+        android:fillColor="#C5F3E7"
+        android:fillAlpha="0.98" />
+    <path
+        android:pathData="M44 37C47 36 50 38 49 41C48 44 45 45 44 43C42 41 41 39 44 37Z"
+        android:fillColor="#C5F3E7"
+        android:fillAlpha="0.98" />
+    <path
+        android:pathData="M10 32a22 22 0 1 0 44 0a22 22 0 1 0 -44 0"
+        android:fillColor="#00000000"
+        android:strokeColor="#3BADE0"
+        android:strokeWidth="2.2"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M16 26Q18 20 23 18"
+        android:fillColor="#00000000"
+        android:strokeColor="#ECFDFF"
+        android:strokeWidth="2.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:strokeAlpha="0.80" />
+</vector>

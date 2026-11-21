@@ -169,6 +169,13 @@ internal data class VaultSnapshot(
     fun typeName(typeId: Long?): String? = typesById[typeId]?.name
 
     /**
+     * 返回记录关联的类型及内置标识。
+     * @param typeId 类型标识
+     * @return 对应类型，缺失时为空
+     */
+    fun type(typeId: Long?): VaultCategory? = typesById[typeId]
+
+    /**
      * 读取指定类别用于管理的列表。
      * @param kind 分类类型
      * @return 对应的分类列表

@@ -265,7 +265,7 @@ private fun PasswordForm(
             }
             PasswordFormField(R.string.vault_type, required = true) { field ->
                 TypeField(
-                    snapshot.typeName(draft.typeId), enabled, fieldColors, modifier = field,
+                    snapshot.type(draft.typeId), enabled, fieldColors, modifier = field,
                 ) { onPickCategory(CategoryKind.Type) }
             }
             SupplementalToggle(expanded, enabled, onToggleSupplemental)
@@ -440,7 +440,7 @@ private fun TagField(
 
 /**
  * 以输入框外观显示当前选中的类型。
- * @param name 当前类型名称
+ * @param type 当前类型及内置标识
  * @param enabled 是否允许打开选择器
  * @param fieldColors 与输入框一致的配色
  * @param modifier 输入框宽度和无障碍标题
@@ -448,7 +448,7 @@ private fun TagField(
  */
 @Composable
 private fun TypeField(
-    name: String?,
+    type: VaultCategory?,
     enabled: Boolean,
     fieldColors: TextFieldColors,
     modifier: Modifier,
@@ -463,6 +463,7 @@ private fun TypeField(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(Theme.spacing.small),
     ) {
+        if (type != null) VaultGlyph(type.name, type, Modifier.size(Theme.spacing.large))
         Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
             // 用普通输入框的单行字号和内边距确定高度。
             Text(
@@ -470,8 +471,8 @@ private fun TypeField(
                 style = MiuixTheme.textStyles.main,
             )
             Text(
-                name ?: stringResource(R.string.vault_type_hint),
-                color = if (name == null) fieldColors.labelColor else colors.onSurface,
+                type?.name ?: stringResource(R.string.vault_type_hint),
+                color = if (type == null) fieldColors.labelColor else colors.onSurface,
                 style = MiuixTheme.textStyles.main, fontWeight = FontWeight.Normal,
                 maxLines = 1, overflow = TextOverflow.Ellipsis,
             )

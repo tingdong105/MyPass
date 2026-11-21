@@ -2,6 +2,7 @@ package com.winter.mypass.feature.home.view
 
 import android.content.res.Configuration
 import androidx.annotation.StringRes
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
@@ -30,7 +31,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
@@ -42,6 +46,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.winter.mypass.R
+import com.winter.mypass.feature.home.model.VaultCategory
 import com.winter.mypass.feature.home.model.VaultProblem
 import com.winter.mypass.ui.theme.Theme
 import top.yukonga.miuix.kmp.basic.BasicComponent
@@ -236,19 +241,35 @@ internal fun VaultLink(
 }
 
 /**
- * 使用平台名称的首个字形作为列表字标。
- * @param platform 平台名称，用于显示首个字形
+ * 内置类型显示透明底图标，其余首字搭配稳定的浅色背景。
+ * @param name 平台或类型名称，用于显示首字
+ * @param type 密码类型，按稳定的内置标识匹配插画
+ * @param modifier 图标的位置与尺寸
  */
 @Composable
-internal fun VaultGlyph(platform: String) {
+internal fun VaultGlyph(name: String, type: VaultCategory? = null, modifier: Modifier = Modifier) {
+    val illustration = when (type?.builtInKey) {
+        "software" -> R.drawable.ic_vault_type_software
+        "website" -> R.drawable.ic_vault_type_website
+        "miniapp" -> R.drawable.ic_vault_type_miniapp
+        else -> null
+    }
+    if (illustration != null) {
+        Image(painterResource(illustration), contentDescription = null, modifier = modifier.size(38.dp))
+        return
+    }
     val colors = MiuixTheme.colorScheme
-    val initial = platform.trim().takeIf(String::isNotEmpty)?.let {
+    val normalizedName = name.trim()
+    val initial = normalizedName.takeIf(String::isNotEmpty)?.let {
         val point = it.codePointAt(0)
         String(Character.toChars(point)).uppercase()
     }
+    // 名称决定色相，重组和重启时保持配色。
+    val hue = Math.floorMod(normalizedName.hashCode(), 360).toFloat()
+    val background = Color.hsv(hue, saturation = 0.20f, value = 0.97f)
+        .copy(alpha = if (colors.surface.luminance() < 0.5f) 0.22f else 1f)
     Box(
-        Modifier.size(38.dp)
-            .background(colors.primary.copy(alpha = 0.12f), RoundedCornerShape(13.dp)),
+        modifier.size(38.dp).background(background, RoundedCornerShape(percent = 35)),
         contentAlignment = Alignment.Center,
     ) {
         if (initial == null) Icon(MiuixIcons.Lock, null, Modifier.size(20.dp), tint = colors.onSurface)
@@ -261,10 +282,17 @@ internal fun VaultGlyph(platform: String) {
  * @param label 选项名称
  * @param selected 当前是否选中
  * @param enabled 是否可选择
+ * @param leading 选项名称前的图标
  * @param onClick 选择回调
  */
 @Composable
-internal fun VaultChoice(label: String, selected: Boolean, enabled: Boolean = true, onClick: () -> Unit) {
+internal fun VaultChoice(
+    label: String,
+    selected: Boolean,
+    enabled: Boolean = true,
+    leading: (@Composable () -> Unit)? = null,
+    onClick: () -> Unit,
+) {
     Row(
         Modifier.fillMaxWidth().heightIn(min = Theme.sizes.minimumTouchTarget)
             .selectable(selected, enabled = enabled, role = Role.RadioButton, onClick = onClick)
@@ -273,6 +301,7 @@ internal fun VaultChoice(label: String, selected: Boolean, enabled: Boolean = tr
         verticalAlignment = Alignment.CenterVertically,
     ) {
         RadioButton(selected, onClick = null, enabled = enabled)
+        leading?.invoke()
         Text(label, maxLines = 2, overflow = TextOverflow.Ellipsis)
     }
 }
