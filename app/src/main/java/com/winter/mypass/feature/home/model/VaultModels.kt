@@ -11,7 +11,15 @@ import java.util.Locale
  * @author Tingdong
  * @date 2026-11-19
  */
-internal data class VaultCategory(val id: Long, val name: String, val entryCount: Int)
+internal data class VaultCategory(
+    val id: Long,
+    val name: String,
+    val entryCount: Int,
+    val builtInKey: String? = null,
+) {
+    /** 内置分类不允许重命名或删除。 */
+    val builtIn: Boolean get() = builtInKey != null
+}
 
 /**
  * 支持管理的分类。
@@ -221,7 +229,7 @@ internal data class VaultSort(val order: VaultOrder = VaultOrder.Updated, val re
  * @date 2026-11-19
  */
 internal enum class VaultProblem {
-    Storage, Required, InvalidWebsite, DuplicateCategory, DuplicatePassword, Missing, LastBook, BookNotEmpty,
+    Storage, Required, InvalidWebsite, DuplicateCategory, DuplicatePassword, Missing, LastBook, BookNotEmpty, BuiltIn,
 }
 
 /**

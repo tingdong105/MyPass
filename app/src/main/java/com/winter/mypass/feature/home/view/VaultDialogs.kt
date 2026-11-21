@@ -229,12 +229,6 @@ internal fun CategoryPicker(
             Modifier.fillMaxWidth().heightIn(max = maxContent).verticalScroll(rememberScrollState())
                 .padding(bottom = Theme.spacing.medium),
         ) {
-            if (kind == CategoryKind.Type) {
-                VaultChoice(stringResource(R.string.vault_none), draft.typeId == null) {
-                    onDraft { it.copy(typeId = null) }
-                    onDismiss()
-                }
-            }
             for (item in snapshot.categories(kind)) {
                 when (kind) {
                     CategoryKind.Book -> VaultChoice(item.name, item.id == draft.bookId) {
@@ -435,7 +429,7 @@ private fun CategoryRow(
         summary = pluralStringResource(R.plurals.vault_record_count, item.entryCount, item.entryCount),
         startAction = { Icon(icon, null, Modifier.size(22.dp)) },
         endActions = {
-            Box {
+            if (!item.builtIn) Box {
                 VaultIcon(MiuixIcons.More, R.string.vault_category_actions, enabled) { menu = true }
                 OverlayListPopup(
                     show = menu,

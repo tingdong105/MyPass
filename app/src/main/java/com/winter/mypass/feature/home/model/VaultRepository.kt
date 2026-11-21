@@ -1,6 +1,8 @@
 package com.winter.mypass.feature.home.model
 
 import android.content.Context
+import androidx.annotation.StringRes
+import com.winter.mypass.R
 import com.winter.mypass.core.utils.RoomUtils
 
 /**
@@ -9,13 +11,15 @@ import com.winter.mypass.core.utils.RoomUtils
  * @date 2026-11-19
  */
 internal class VaultRepository(context: Context, private val defaultBookName: String) {
+    private val context = context.applicationContext
+
     private val storage = RoomUtils(
         context, VaultDatabase::class.java, DatabaseName,
-        VaultMigration1To2, VaultMigration2To3, VaultMigration3To4,
+        VaultMigration1To2, VaultMigration2To3, VaultMigration3To4, VaultMigration4To5,
     )
 
     /**
-     * 验证密钥，首次使用时初始化密码本和类型。
+     * 验证密钥，首次使用时初始化密码本，并确保内置类型存在。
      * @param key 从应用锁解出的数据库密钥
      */
     suspend fun open(key: ByteArray) {
@@ -25,13 +29,8 @@ internal class VaultRepository(context: Context, private val defaultBookName: St
                 val dao = vaultDao()
                 if (dao.books().isEmpty()) {
                     dao.insertBook(VaultBook(name = defaultBookName, createdAt = System.currentTimeMillis()))
-                    val existingTypes = dao.types()
-                    for (name in listOf("APP", "Web")) {
-                        if (existingTypes.none { it.name.equals(name, ignoreCase = true) }) {
-                            dao.insertType(VaultType(name = name))
-                        }
-                    }
                 }
+                dao.ensureBuiltInTypes()
             }
         } catch (failure: Throwable) {
             try {
@@ -40,6 +39,37 @@ internal class VaultRepository(context: Context, private val defaultBookName: St
                 failure.addSuppressed(closeFailure)
             }
             throw failure
+        }
+    }
+
+    /**
+     * 确保三个内置类型存在，并把旧版默认类型沿用为内置类型。
+     * @receiver 当前事务中的 DAO
+     */
+    private suspend fun VaultDao.ensureBuiltInTypes() {
+        val existing = types().toMutableList()
+        for (builtIn in BuiltInTypes) {
+            if (existing.any { it.builtInKey == builtIn.key }) continue
+            val name = context.getString(builtIn.name)
+            val sameName = existing.firstOrNull { it.name.equals(name, ignoreCase = true) }
+            if (sameName != null) {
+                // 用户可能早已创建同名类型，直接复用，避免触发名称唯一约束。
+                if (sameName.builtInKey == null) {
+                    setTypeBuiltIn(sameName.id, builtIn.key, name)
+                    existing[existing.indexOf(sameName)] = sameName.copy(name = name, builtInKey = builtIn.key)
+                }
+                continue
+            }
+            val legacy = builtIn.legacy?.let { old ->
+                existing.firstOrNull { it.builtInKey == null && it.name.equals(old, ignoreCase = true) }
+            }
+            if (legacy != null) {
+                setTypeBuiltIn(legacy.id, builtIn.key, name)
+                existing[existing.indexOf(legacy)] = legacy.copy(name = name, builtInKey = builtIn.key)
+            } else {
+                val id = insertType(VaultType(name = name, builtInKey = builtIn.key))
+                existing += VaultCategory(id, name, 0, builtIn.key)
+            }
         }
     }
 
@@ -122,7 +152,9 @@ internal class VaultRepository(context: Context, private val defaultBookName: St
         storage.transaction {
             val dao = vaultDao()
             val platform = draft.platform.trim()
-            if (platform.isEmpty() || draft.password.isEmpty()) throw VaultException(VaultProblem.Required)
+            if (platform.isEmpty() || draft.password.isEmpty() || draft.typeId == null) {
+                throw VaultException(VaultProblem.Required)
+            }
             val website = draft.website.takeIf(String::isNotBlank)?.let {
                 browserWebsite(it) ?: throw VaultException(VaultProblem.InvalidWebsite)
             }
@@ -193,8 +225,12 @@ internal class VaultRepository(context: Context, private val defaultBookName: St
             val dao = vaultDao()
             val name = rawName.trim()
             if (name.isEmpty()) throw VaultException(VaultProblem.Required)
-            if (dao.categories(kind).any { it.id != id && it.name.equals(name, ignoreCase = true) }) {
+            val categories = dao.categories(kind)
+            if (categories.any { it.id != id && it.name.equals(name, ignoreCase = true) }) {
                 throw VaultException(VaultProblem.DuplicateCategory)
+            }
+            if (kind == CategoryKind.Type && id != null && categories.firstOrNull { it.id == id }?.builtIn == true) {
+                throw VaultException(VaultProblem.BuiltIn)
             }
             val nextBook = when (kind) {
                 CategoryKind.Book -> if (id == null) {
@@ -239,7 +275,11 @@ internal class VaultRepository(context: Context, private val defaultBookName: St
                 dao.deleteBook(id)
             }
             CategoryKind.Tag -> dao.deleteTag(id)
-            CategoryKind.Type -> dao.deleteType(id)
+            CategoryKind.Type -> {
+                val type = dao.types().firstOrNull { it.id == id } ?: throw VaultException(VaultProblem.Missing)
+                if (type.builtIn) throw VaultException(VaultProblem.BuiltIn)
+                dao.deleteType(id)
+            }
         }
         dao.snapshot(bookId, preview)
     }
@@ -282,5 +322,23 @@ internal class VaultRepository(context: Context, private val defaultBookName: St
 
     companion object {
         const val DatabaseName = "vault.db"
+
+        private val BuiltInTypes = listOf(
+            BuiltInType("software", R.string.vault_builtin_software, legacy = "APP"),
+            BuiltInType("website", R.string.vault_builtin_website, legacy = "Web"),
+            BuiltInType("miniapp", R.string.vault_builtin_miniapp),
+        )
     }
 }
+
+/**
+ * 内置类型的稳定标识、显示名称和需要沿用的旧版名称。
+ * @param key 跨语言保持不变的内置标识
+ * @param name 显示名称资源
+ * @param legacy 旧版本自动创建的默认类型名称
+ */
+private data class BuiltInType(
+    val key: String,
+    @StringRes val name: Int,
+    val legacy: String? = null,
+)

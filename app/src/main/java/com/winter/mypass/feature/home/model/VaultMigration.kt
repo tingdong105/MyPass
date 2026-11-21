@@ -55,6 +55,17 @@ internal val VaultMigration3To4 = object : Migration(3, 4) {
     }
 }
 
+/** 为类型增加内置标识，用于保护内置类型。 */
+internal val VaultMigration4To5 = object : Migration(4, 5) {
+    /**
+     * 新增可空的内置标识列，已有类型默认仍然可编辑。
+     * @param db 当前加密数据库
+     */
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE vault_types ADD COLUMN builtInKey TEXT")
+    }
+}
+
 /**
  * 将旧版 entries 结构复制到 v2 表，先移除旧关联表再移除其父表。
  * @receiver 迁移事务中的数据库

@@ -32,7 +32,11 @@ internal data class VaultTag(@PrimaryKey(autoGenerate = true) val id: Long = 0, 
  * 可跨密码本使用的类型。
  */
 @Entity(tableName = "vault_types", indices = [Index(value = ["name"], unique = true)])
-internal data class VaultType(@PrimaryKey(autoGenerate = true) val id: Long = 0, val name: String)
+internal data class VaultType(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    val builtInKey: String? = null,
+)
 
 /**
  * 加密库中的完整密码记录。
@@ -115,7 +119,7 @@ internal interface VaultDao {
      * 读取密码本和各本条目数。
      */
     @Query("""
-        SELECT b.id, b.name, COUNT(p.id) AS entryCount FROM vault_books b
+        SELECT b.id, b.name, COUNT(p.id) AS entryCount, NULL AS builtInKey FROM vault_books b
         LEFT JOIN vault_passwords p ON p.bookId = b.id GROUP BY b.id ORDER BY b.id
     """)
     suspend fun books(): List<VaultCategory>
@@ -124,17 +128,18 @@ internal interface VaultDao {
      * 读取标签和关联条目数。
      */
     @Query("""
-        SELECT t.id, t.name, COUNT(p.passwordId) AS entryCount FROM vault_tags t
+        SELECT t.id, t.name, COUNT(p.passwordId) AS entryCount, NULL AS builtInKey FROM vault_tags t
         LEFT JOIN vault_password_tags p ON p.tagId = t.id GROUP BY t.id ORDER BY t.id
     """)
     suspend fun tags(): List<VaultCategory>
 
     /**
-     * 读取类型和关联条目数。
+     * 读取类型和关联条目数，内置类型排在最前。
      */
     @Query("""
-        SELECT t.id, t.name, COUNT(p.id) AS entryCount FROM vault_types t
-        LEFT JOIN vault_passwords p ON p.typeId = t.id GROUP BY t.id ORDER BY t.id
+        SELECT t.id, t.name, COUNT(p.id) AS entryCount, t.builtInKey FROM vault_types t
+        LEFT JOIN vault_passwords p ON p.typeId = t.id GROUP BY t.id
+        ORDER BY t.builtInKey IS NULL, t.id
     """)
     suspend fun types(): List<VaultCategory>
 
@@ -235,6 +240,12 @@ internal interface VaultDao {
     suspend fun renameType(id: Long, name: String)
 
     /**
+     * 将旧版默认类型沿用为内置类型。
+     */
+    @Query("UPDATE vault_types SET name = :name, builtInKey = :key WHERE id = :id")
+    suspend fun setTypeBuiltIn(id: Long, key: String, name: String)
+
+    /**
      * 删除已通过空本检查的密码本。
      */
     @Query("DELETE FROM vault_books WHERE id = :id")
@@ -269,7 +280,7 @@ internal interface VaultDao {
         VaultBook::class, VaultTag::class, VaultType::class, VaultPassword::class,
         PasswordTag::class, GeneratedPasswordCopy::class,
     ],
-    version = 4,
+    version = 5,
 )
 internal abstract class VaultDatabase : RoomDatabase() {
     /**

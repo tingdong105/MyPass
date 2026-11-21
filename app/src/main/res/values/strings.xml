@@ -55,6 +55,11 @@
     <string name="vault_categories_empty">暂无分类</string>
     <string name="vault_rename">改名</string>
     <string name="vault_none">未选择</string>
+    <string name="vault_type_hint">请选择类型</string>
+    <string name="vault_builtin_software">软件</string>
+    <string name="vault_builtin_website">网站</string>
+    <string name="vault_builtin_miniapp">小程序</string>
+    <string name="vault_built_in">内置类型不可修改或删除</string>
     <string name="vault_add">新增密码</string>
     <string name="vault_edit">编辑密码</string>
     <string name="vault_save">保存</string>

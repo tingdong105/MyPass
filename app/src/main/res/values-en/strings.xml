@@ -56,6 +56,11 @@
     <string name="vault_categories_empty">No items yet</string>
     <string name="vault_rename">Rename</string>
     <string name="vault_none">None</string>
+    <string name="vault_type_hint">Choose a type</string>
+    <string name="vault_builtin_software">Software</string>
+    <string name="vault_builtin_website">Website</string>
+    <string name="vault_builtin_miniapp">Mini Program</string>
+    <string name="vault_built_in">Built-in types can\'t be changed or deleted</string>
     <string name="vault_add">Add password</string>
     <string name="vault_edit">Edit password</string>
     <string name="vault_save">Save</string>

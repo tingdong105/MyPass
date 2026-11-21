@@ -324,6 +324,7 @@ internal fun VaultErrorText(problem: VaultProblem?) {
         VaultProblem.Missing -> R.string.vault_missing
         VaultProblem.LastBook -> R.string.vault_last_book
         VaultProblem.BookNotEmpty -> R.string.vault_book_not_empty
+        VaultProblem.BuiltIn -> R.string.vault_built_in
     }
     Text(
         stringResource(label), modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },

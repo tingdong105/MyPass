@@ -258,7 +258,7 @@ internal class VaultViewModel(
             if (current.tab == VaultTab.Generate && password.isNotEmpty()) pendingGeneratedAddition = password
             return
         }
-        val draft = PasswordDraft(bookId = book)
+        val draft = PasswordDraft(bookId = book).withDefaultType()
         mutableState.value = current.copy(
             tab = VaultTab.Home, page = VaultPage.Editor(draft, draft.copy(password = password)), problem = null,
         )
@@ -292,7 +292,10 @@ internal class VaultViewModel(
         val next = when (detail.phase) {
             DetailPhase.Open -> return
             DetailPhase.Closing -> null
-            DetailPhase.ClosingForEdit -> VaultPage.Editor(detail.draft, detail.draft)
+            DetailPhase.ClosingForEdit -> {
+                val draft = detail.draft.withDefaultType()
+                VaultPage.Editor(draft, draft)
+            }
         }
         mutableState.value = current.copy(page = next, problem = null)
     }
@@ -305,6 +308,11 @@ internal class VaultViewModel(
         val editor = current.page as? VaultPage.Editor ?: return
         if (current.busy || editor.phase != EditorPhase.Open) return
         val draft = update(editor.draft)
+        if (draft.typeId != editor.draft.typeId) {
+            draft.typeId?.let { typeId ->
+                viewModelScope.launch(Dispatchers.IO) { MMKVUtils.putLong(TypeKey, typeId) }
+            }
+        }
         mutableState.value = current.copy(page = editor.copy(draft = draft), problem = null)
     }
 
@@ -318,6 +326,9 @@ internal class VaultViewModel(
         val book = current.snapshot?.bookId ?: return
         perform {
             val snapshot = repository.save(editor.draft, book, allowDuplicate, current.passwordPreview)
+            editor.draft.typeId?.let { typeId ->
+                withContext(Dispatchers.IO) { MMKVUtils.putLong(TypeKey, typeId) }
+            }
             mutableState.value = current.copy(snapshot = snapshot, page = editor.copy(phase = EditorPhase.Closing))
         }
     }
@@ -609,6 +620,18 @@ internal class VaultViewModel(
     }
 
     /**
+     * 为缺少类型的草稿补上上次选择的类型，首次使用第一个类型。
+     * @return 带有默认类型的草稿
+     */
+    private fun PasswordDraft.withDefaultType(): PasswordDraft {
+        if (typeId != null) return this
+        val types = current.snapshot?.types.orEmpty()
+        if (types.isEmpty()) return this
+        val remembered = MMKVUtils.getLong(TypeKey)
+        return copy(typeId = types.firstOrNull { it.id == remembered }?.id ?: types.first().id)
+    }
+
+    /**
      * 兼容读取两个旧实现的排序偏好。
      * @return 已保存或默认的排序方式与方向
      */
@@ -626,5 +649,6 @@ internal class VaultViewModel(
         const val SortKey = "vault.sort"
         const val BookKey = "vault.current_book"
         const val PasswordVisibilityKey = "vault.password_visibility"
+        const val TypeKey = "vault.last_type"
     }
 }

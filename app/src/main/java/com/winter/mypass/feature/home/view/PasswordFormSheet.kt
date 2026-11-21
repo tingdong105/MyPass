@@ -6,6 +6,8 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -39,6 +41,8 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.Clipboard
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalFocusManager
@@ -80,7 +84,6 @@ import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.ChevronForward
 import top.yukonga.miuix.kmp.icon.extended.Folder
 import top.yukonga.miuix.kmp.icon.extended.Hide
-import top.yukonga.miuix.kmp.icon.extended.Layers
 import top.yukonga.miuix.kmp.icon.extended.Show
 import top.yukonga.miuix.kmp.overlay.OverlayBottomSheet
 import top.yukonga.miuix.kmp.squircle.squircleSurface
@@ -140,9 +143,23 @@ internal fun PasswordFormSheet(
         show = open,
         title = stringResource(if (editor.draft.id == null) R.string.vault_add else R.string.vault_edit),
         sheetMaxWidth = VaultLayout.PaneWidth,
+        modifier = Modifier.pointerInput(Unit) {
+            // 只拦截顶部拖拽把手，保留点击外部关闭。
+            val handleHeight = 24.dp.toPx()
+            awaitEachGesture {
+                val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+                if (down.position.y > handleHeight) return@awaitEachGesture
+                down.consume()
+                do {
+                    val event = awaitPointerEvent(PointerEventPass.Initial)
+                    event.changes.forEach { if (it.id == down.id) it.consume() }
+                } while (event.changes.any { it.id == down.id && it.pressed })
+            }
+        },
+        onDismissRequest = dismiss,
         onDismissFinished = onDismissFinished,
         dragHandleColor = Color.Transparent,
-        allowDismiss = false,
+        allowDismiss = true,
         enableNestedScroll = false,
     ) {
         BackHandler(enabled = enabled && !showPicker && !duplicate, onBack = dismiss)
@@ -246,6 +263,11 @@ private fun PasswordForm(
                     onValueChange = { value -> onDraft { it.copy(password = value) } },
                 )
             }
+            PasswordFormField(R.string.vault_type, required = true) { field ->
+                TypeField(
+                    snapshot.typeName(draft.typeId), enabled, fieldColors, modifier = field,
+                ) { onPickCategory(CategoryKind.Type) }
+            }
             SupplementalToggle(expanded, enabled, onToggleSupplemental)
             AnimatedVisibility(visible = expanded) {
                 SupplementalFields(draft, snapshot, enabled, fieldColors, onDraft, onPickCategory)
@@ -263,7 +285,8 @@ private fun PasswordForm(
                 )
                 TextButton(
                     stringResource(R.string.vault_confirm_add), onClick = onConfirm,
-                    enabled = enabled && draft.platform.isNotBlank() && draft.password.isNotEmpty(),
+                    enabled = enabled && draft.platform.isNotBlank() && draft.password.isNotEmpty() &&
+                        draft.typeId != null,
                     modifier = Modifier.weight(1f), minHeight = Theme.sizes.minimumTouchTarget,
                     colors = ButtonDefaults.textButtonColorsPrimary(),
                 )
@@ -302,7 +325,7 @@ private fun SupplementalToggle(expanded: Boolean, enabled: Boolean, onToggle: ()
 }
 
 /**
- * 显示可选的补充字段和编辑专用分类。
+ * 显示可选的补充字段和分类。
  * @param draft 当前输入
  * @param snapshot 可选择的分类
  * @param enabled 是否可输入
@@ -354,11 +377,6 @@ private fun SupplementalFields(
                 stringResource(R.string.vault_book), snapshot.books.firstOrNull { it.id == draft.bookId }?.name,
                 enabled = enabled, icon = MiuixIcons.Folder,
             ) { onPickCategory(CategoryKind.Book) }
-            VaultRowDivider()
-            VaultLink(
-                stringResource(R.string.vault_type), snapshot.typeName(draft.typeId),
-                enabled = enabled, icon = MiuixIcons.Layers,
-            ) { onPickCategory(CategoryKind.Type) }
         }
     }
 }
@@ -412,6 +430,51 @@ private fun TagField(
                     }
                 }
             }
+        }
+        Icon(
+            MiuixIcons.ChevronForward, contentDescription = null, Modifier.size(Theme.spacing.medium),
+            tint = colors.onSurfaceVariantSummary,
+        )
+    }
+}
+
+/**
+ * 以输入框外观显示当前选中的类型。
+ * @param name 当前类型名称
+ * @param enabled 是否允许打开选择器
+ * @param fieldColors 与输入框一致的配色
+ * @param modifier 输入框宽度和无障碍标题
+ * @param onClick 打开类型选择器
+ */
+@Composable
+private fun TypeField(
+    name: String?,
+    enabled: Boolean,
+    fieldColors: TextFieldColors,
+    modifier: Modifier,
+    onClick: () -> Unit,
+) {
+    val colors = MiuixTheme.colorScheme
+    val inset = TextFieldDefaults.InsideMargin
+    Row(
+        modifier.squircleSurface(fieldColors.backgroundColor, TextFieldDefaults.CornerRadius)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .padding(horizontal = inset.width),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(Theme.spacing.small),
+    ) {
+        Box(Modifier.weight(1f), contentAlignment = Alignment.CenterStart) {
+            // 用普通输入框的单行字号和内边距确定高度。
+            Text(
+                " ", Modifier.padding(vertical = inset.height).alpha(0f).clearAndSetSemantics { },
+                style = MiuixTheme.textStyles.main,
+            )
+            Text(
+                name ?: stringResource(R.string.vault_type_hint),
+                color = if (name == null) fieldColors.labelColor else colors.onSurface,
+                style = MiuixTheme.textStyles.main, fontWeight = FontWeight.Normal,
+                maxLines = 1, overflow = TextOverflow.Ellipsis,
+            )
         }
         Icon(
             MiuixIcons.ChevronForward, contentDescription = null, Modifier.size(Theme.spacing.medium),
