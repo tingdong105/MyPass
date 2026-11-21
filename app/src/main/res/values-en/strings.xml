@@ -160,4 +160,14 @@
         <item quantity="one">%d record</item>
         <item quantity="other">%d records</item>
     </plurals>
+    <string name="vault_clear_password_selection">Exit selection</string>
+    <string name="vault_delete_passwords">Delete selected passwords</string>
+    <plurals name="vault_passwords_selected">
+        <item quantity="one">%d selected</item>
+        <item quantity="other">%d selected</item>
+    </plurals>
+    <plurals name="vault_delete_passwords_summary">
+        <item quantity="one">Delete the %d selected password?</item>
+        <item quantity="other">Delete the %d selected passwords?</item>
+    </plurals>
 </resources>

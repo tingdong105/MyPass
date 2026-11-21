@@ -137,6 +137,7 @@ internal data class VaultState(
     val sort: VaultSort = VaultSort(),
     val passwordPreview: PasswordPreviewSettings = PasswordPreviewSettings(),
     val query: String = "",
+    val selectedPasswordIds: Set<Long> = emptySet(),
     val tab: VaultTab = VaultTab.Home,
     val page: VaultPage? = null,
     val generator: GeneratorState = GeneratorState(),
@@ -187,7 +188,9 @@ internal class VaultViewModel(
      * @param tab 目标页面
      */
     fun selectTab(tab: VaultTab) {
-        if (!current.busy && current.page == null) mutableState.value = current.copy(tab = tab, problem = null)
+        if (!current.busy && current.page == null) {
+            mutableState.value = current.copy(tab = tab, selectedPasswordIds = emptySet(), problem = null)
+        }
     }
 
     /**
@@ -197,7 +200,7 @@ internal class VaultViewModel(
     fun selectBook(id: Long) = performFromTabs {
         val snapshot = repository.snapshot(id, current.passwordPreview)
         rememberBook(snapshot.bookId)
-        mutableState.value = current.copy(snapshot = snapshot)
+        mutableState.value = current.copy(snapshot = snapshot, selectedPasswordIds = emptySet())
     }
 
     /**
@@ -205,8 +208,43 @@ internal class VaultViewModel(
      * @param query 查询内容
      */
     fun search(query: String) {
-        if (current.page != null) return
-        mutableState.value = current.copy(query = query)
+        if (current.busy || current.page != null || query == current.query) return
+        mutableState.value = current.copy(query = query, selectedPasswordIds = emptySet())
+    }
+
+    /**
+     * 长按进入多选，或切换当前本内一条密码的选择状态。
+     * @param id 密码记录标识
+     */
+    fun togglePasswordSelection(id: Long) {
+        if (current.busy || current.page != null || current.tab != VaultTab.Home) return
+        if (current.snapshot?.passwords?.none { it.id == id } != false) return
+        val selected = current.selectedPasswordIds
+        mutableState.value = current.copy(
+            selectedPasswordIds = if (id in selected) selected - id else selected + id,
+            problem = null,
+        )
+    }
+
+    /**
+     * 退出首页多选并清理操作错误。
+     */
+    fun clearPasswordSelection() {
+        if (!current.busy) mutableState.value = current.copy(selectedPasswordIds = emptySet(), problem = null)
+    }
+
+    /**
+     * 删除已确认的所选密码，成功后退出多选，失败时保留选择。
+     */
+    fun deleteSelectedPasswords() {
+        val snapshot = current.snapshot ?: return
+        if (current.tab != VaultTab.Home || current.page != null) return
+        val ids = current.selectedPasswordIds.intersect(snapshot.passwords.map { it.id }.toSet())
+        if (ids.isEmpty()) return
+        performFromTabs {
+            val updated = repository.deletePasswords(ids, snapshot.bookId, current.passwordPreview)
+            mutableState.value = current.copy(snapshot = updated, selectedPasswordIds = emptySet())
+        }
     }
 
     /**
@@ -244,7 +282,9 @@ internal class VaultViewModel(
      */
     fun openDetail(id: Long) = performFromTabs {
         val detail = repository.detail(id)
-        mutableState.value = current.copy(tab = VaultTab.Home, page = VaultPage.Detail(detail))
+        mutableState.value = current.copy(
+            tab = VaultTab.Home, page = VaultPage.Detail(detail), selectedPasswordIds = emptySet(),
+        )
     }
 
     /**
@@ -260,7 +300,8 @@ internal class VaultViewModel(
         }
         val draft = PasswordDraft(bookId = book).withDefaultType()
         mutableState.value = current.copy(
-            tab = VaultTab.Home, page = VaultPage.Editor(draft, draft.copy(password = password)), problem = null,
+            tab = VaultTab.Home, page = VaultPage.Editor(draft, draft.copy(password = password)),
+            selectedPasswordIds = emptySet(), problem = null,
         )
     }
 
@@ -449,7 +490,9 @@ internal class VaultViewModel(
      */
     fun manage(kind: CategoryKind) {
         if (!current.busy && current.page == null) {
-            mutableState.value = current.copy(page = VaultPage.Categories(kind), problem = null)
+            mutableState.value = current.copy(
+                page = VaultPage.Categories(kind), selectedPasswordIds = emptySet(), problem = null,
+            )
         }
     }
 

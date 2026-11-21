@@ -206,6 +206,20 @@ internal class VaultRepository(context: Context, private val defaultBookName: St
     }
 
     /**
+     * 在同一事务中批量删除当前本内的密码并刷新计数。
+     * @param ids 待删除的记录标识
+     * @param bookId 当前密码本
+     * @param preview 列表密码预览设置
+     * @return 删除后的列表快照
+     */
+    suspend fun deletePasswords(ids: Set<Long>, bookId: Long, preview: PasswordPreviewSettings): VaultSnapshot =
+        storage.transaction {
+            val dao = vaultDao()
+            for (batch in ids.chunked(500)) dao.deletePasswords(bookId, batch)
+            dao.snapshot(bookId, preview)
+        }
+
+    /**
      * 新建或重命名分类，同类名称按忽略大小写校验。
      * @param kind 分类种类
      * @param id 已有分类标识，新建时为空

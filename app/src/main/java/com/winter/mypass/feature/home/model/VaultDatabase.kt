@@ -268,6 +268,14 @@ internal interface VaultDao {
      */
     @Query("DELETE FROM vault_passwords WHERE id = :id")
     suspend fun deletePassword(id: Long)
+
+    /**
+     * 批量删除当前本内的密码及标签关联。
+     * @param bookId 所属密码本
+     * @param ids 待删除的记录标识
+     */
+    @Query("DELETE FROM vault_passwords WHERE bookId = :bookId AND id IN (:ids)")
+    suspend fun deletePasswords(bookId: Long, ids: List<Long>)
 }
 
 /**

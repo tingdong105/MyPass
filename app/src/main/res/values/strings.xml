@@ -156,4 +156,12 @@
     <plurals name="vault_history_delete_summary">
         <item quantity="other">确定删除选中的 %d 条复制记录？</item>
     </plurals>
+    <string name="vault_clear_password_selection">退出多选</string>
+    <string name="vault_delete_passwords">删除所选密码</string>
+    <plurals name="vault_passwords_selected">
+        <item quantity="other">已选 %d 项</item>
+    </plurals>
+    <plurals name="vault_delete_passwords_summary">
+        <item quantity="other">确定删除选中的 %d 条密码？</item>
+    </plurals>
 </resources>

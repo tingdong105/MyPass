@@ -5,12 +5,21 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedContentTransitionScope.SlideDirection
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -54,6 +63,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalConfiguration
@@ -61,13 +72,19 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.hideFromAccessibility
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.toggleableState
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -90,6 +107,8 @@ import com.winter.mypass.feature.home.viewmodel.VaultViewModel
 import com.winter.mypass.ui.theme.MyPassTheme
 import com.winter.mypass.ui.theme.Theme
 import top.yukonga.miuix.kmp.basic.Card
+import top.yukonga.miuix.kmp.basic.CardDefaults
+import top.yukonga.miuix.kmp.basic.Checkbox
 import top.yukonga.miuix.kmp.basic.CircularProgressIndicator
 import top.yukonga.miuix.kmp.basic.FloatingActionButton
 import top.yukonga.miuix.kmp.basic.HorizontalDivider
@@ -108,6 +127,7 @@ import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Add
 import top.yukonga.miuix.kmp.icon.extended.ChevronForward
 import top.yukonga.miuix.kmp.icon.extended.Close
+import top.yukonga.miuix.kmp.icon.extended.Delete
 import top.yukonga.miuix.kmp.icon.extended.Folder
 import top.yukonga.miuix.kmp.icon.extended.FolderFill
 import top.yukonga.miuix.kmp.icon.extended.Search
@@ -214,6 +234,9 @@ internal fun VaultScreen(model: VaultViewModel, onChangeCredential: () -> Unit) 
                     onRefreshGenerated = model::refreshGeneratedPassword,
                     onCopyGenerated = model::copyGenerated,
                     onOpenGenerationHistory = model::openGenerationHistory,
+                    onToggleSelection = model::togglePasswordSelection,
+                    onClearSelection = model::clearPasswordSelection,
+                    onDeleteSelected = model::deleteSelectedPasswords,
                 ) {
                     if (active) when (page) {
                         is VaultPage.Detail -> PasswordDetailSheet(
@@ -286,6 +309,9 @@ private fun VaultLoading(state: VaultState, retry: () -> Unit) {
  * @param onRefreshGenerated 使用当前参数生成新密码
  * @param onCopyGenerated 复制生成结果并在成功后确认
  * @param onOpenGenerationHistory 打开复制历史
+ * @param onToggleSelection 切换一条密码的选择状态
+ * @param onClearSelection 退出多选
+ * @param onDeleteSelected 删除已确认的所选密码
  * @param overlays 挂载到顶层 Scaffold 的浮层
  */
 @OptIn(ExperimentalLayoutApi::class)
@@ -309,12 +335,19 @@ private fun VaultTopLevel(
     onRefreshGenerated: () -> Unit,
     onCopyGenerated: (String, () -> Unit) -> Unit,
     onOpenGenerationHistory: () -> Unit,
+    onToggleSelection: (Long) -> Unit,
+    onClearSelection: () -> Unit,
+    onDeleteSelected: () -> Unit,
     overlays: @Composable () -> Unit = {},
 ) {
     var drawer by remember { mutableStateOf(false) }
+    val selected = state.selectedPasswordIds
+    val selecting = selected.isNotEmpty()
+    var confirmingDelete by remember(snapshot.bookId, state.tab, state.query, selecting, active) { mutableStateOf(false) }
+    val deleteConfirmationOpen = active && state.tab == VaultTab.Home && selecting && confirmingDelete
     val keyboard = WindowInsets.isImeVisible
     val tabSlideDistance = with(LocalDensity.current) { 64.dp.roundToPx() }
-    val modalOpen = state.page is VaultPage.Editor || state.page is VaultPage.Detail
+    val modalOpen = state.page is VaultPage.Editor || state.page is VaultPage.Detail || deleteConfirmationOpen
     val background = if (modalOpen) Modifier.blockVaultBackgroundFocus() else Modifier
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val docked = maxWidth >= VaultLayout.DockedSidebarBreakpoint
@@ -322,6 +355,9 @@ private fun VaultTopLevel(
         val drawerVisible = drawer && home && !docked
         BackHandler(active && !keyboard && (drawerVisible || !home)) {
             if (drawerVisible) drawer = false else onTab(VaultTab.Home)
+        }
+        BackHandler(active && home && selecting) {
+            if (deleteConfirmationOpen) confirmingDelete = false else onClearSelection()
         }
         Scaffold(
             modifier = Modifier.fillMaxSize()
@@ -354,12 +390,14 @@ private fun VaultTopLevel(
                 val focus = LocalFocusManager.current
                 val bookTitle = snapshot.books.first { it.id == snapshot.bookId }.name
                 val heading = when (tab) {
-                    VaultTab.Home -> bookTitle
+                    VaultTab.Home -> if (selecting) {
+                        pluralStringResource(R.plurals.vault_passwords_selected, selected.size, selected.size)
+                    } else bookTitle
                     VaultTab.Generate -> stringResource(R.string.vault_generator_title)
                     VaultTab.Settings -> stringResource(R.string.vault_settings)
                 }
                 val sortAction: @Composable () -> Unit = {
-                    if (homePage) SortMenu(
+                    if (homePage && !selecting) SortMenu(
                         state.sort, state.busy, state.problem, onSort,
                         onOpen = {
                             focus.clearFocus()
@@ -402,6 +440,7 @@ private fun VaultTopLevel(
                                                 drawer = true
                                             }
                                         } else null,
+                                        onClearSelection = if (selecting && homePage) onClearSelection else null,
                                         actions = sortAction,
                                     )
                                 }
@@ -410,11 +449,14 @@ private fun VaultTopLevel(
                     },
                     snackbarHost = { if (tab == VaultTab.Generate) GeneratorSnackbarHost(generatorSnackbar) },
                     floatingActionButton = {
-                        if (homePage && !keyboard && !drawerVisible) FloatingActionButton(
-                            onClick = { if (!state.busy) onAdd("") },
-                            modifier = Modifier.padding(horizontal = Theme.spacing.small),
+                        if (homePage && !keyboard && !drawerVisible) PasswordActionFab(
+                            selecting = selecting,
+                            enabled = active && tab == state.tab && !state.busy && !deleteConfirmationOpen,
                         ) {
-                            Icon(MiuixIcons.Add, stringResource(R.string.vault_add), tint = MiuixTheme.colorScheme.onPrimary)
+                            if (selecting) {
+                                focus.clearFocus(force = true)
+                                confirmingDelete = true
+                            } else onAdd("")
                         }
                     },
                     contentWindowInsets = WindowInsets.safeDrawing.union(WindowInsets.ime),
@@ -433,10 +475,13 @@ private fun VaultTopLevel(
                                 if (docked) VaultTabHeader(
                                     title = heading, includeWindowInsets = false,
                                     modifier = Modifier.widthIn(max = VaultLayout.PaneWidth).fillMaxWidth(),
+                                    onClearSelection = if (selecting) onClearSelection else null,
                                     actions = sortAction,
                                 )
                                 PasswordList(
-                                    state, snapshot, list, Modifier.fillMaxWidth().weight(1f), onQuery, onOpen,
+                                    state, snapshot, list, Modifier.fillMaxWidth().weight(1f),
+                                    active && home && !drawerVisible && !deleteConfirmationOpen,
+                                    onQuery, onOpen, onToggleSelection,
                                 )
                             }
                         }
@@ -455,6 +500,18 @@ private fun VaultTopLevel(
                 }
             }
             overlays()
+            // 确认框通过顶层 Scaffold 的弹窗宿主展示。
+            VaultConfirm(
+                show = deleteConfirmationOpen,
+                title = stringResource(R.string.vault_delete_passwords),
+                summary = pluralStringResource(R.plurals.vault_delete_passwords_summary, selected.size, selected.size),
+                confirm = R.string.vault_delete,
+                onDismiss = { confirmingDelete = false },
+                onConfirm = {
+                    confirmingDelete = false
+                    onDeleteSelected()
+                },
+            )
         }
         if (!docked && home && !modalOpen) BookDrawer(
             drawerVisible, snapshot, state.busy, onDismiss = { drawer = false },
@@ -476,6 +533,7 @@ private fun VaultTopLevel(
  * @param modifier 顶栏的宽度约束
  * @param includeWindowInsets 是否为顶栏处理系统栏边距
  * @param onOpenBooks 手机上的侧栏入口
+ * @param onClearSelection 多选时替换侧栏入口的退出按钮
  * @param actions 顶栏末端的操作
  */
 @Composable
@@ -484,6 +542,7 @@ private fun VaultTabHeader(
     modifier: Modifier = Modifier,
     includeWindowInsets: Boolean = true,
     onOpenBooks: (() -> Unit)? = null,
+    onClearSelection: (() -> Unit)? = null,
     actions: @Composable () -> Unit = {},
 ) {
     val insets = if (includeWindowInsets) {
@@ -491,10 +550,18 @@ private fun VaultTabHeader(
     } else Modifier
     Row(
         modifier.then(insets).heightIn(min = Theme.sizes.minimumTouchTarget + Theme.spacing.small)
-            .padding(start = if (onOpenBooks == null) Theme.spacing.medium else Theme.spacing.small, end = Theme.spacing.small),
+            .padding(
+                start = if (onOpenBooks == null && onClearSelection == null) Theme.spacing.medium else Theme.spacing.small,
+                end = Theme.spacing.small,
+            ),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        if (onOpenBooks != null) {
+        if (onClearSelection != null) {
+            VaultIcon(
+                MiuixIcons.Close, R.string.vault_clear_password_selection,
+                onClick = onClearSelection, iconSize = VaultLayout.HomeHeaderIconSize,
+            )
+        } else if (onOpenBooks != null) {
             VaultIcon(
                 ImageVector.vectorResource(R.drawable.ic_vault_menu), R.string.vault_books,
                 onClick = onOpenBooks, iconSize = VaultLayout.HomeHeaderIconSize,
@@ -536,13 +603,59 @@ private fun VaultNavigation(tab: VaultTab, onTab: (VaultTab) -> Unit, modifier: 
 }
 
 /**
+ * 让旧按钮下沉、新按钮从下方弹入。
+ * @param selecting 是否正在多选
+ * @param enabled 是否可点击
+ * @param onClick 添加记录或确认批量删除
+ */
+@Composable
+private fun PasswordActionFab(selecting: Boolean, enabled: Boolean, onClick: () -> Unit) {
+    val colors = MiuixTheme.colorScheme
+    val travelPadding = with(LocalDensity.current) { Theme.spacing.medium.roundToPx() }
+    AnimatedContent(
+        targetState = selecting,
+        modifier = Modifier.padding(horizontal = Theme.spacing.small),
+        transitionSpec = {
+            val enter = slideInVertically(
+                spring(dampingRatio = 0.62f, stiffness = 400f),
+                initialOffsetY = { it + travelPadding },
+            ) + fadeIn(tween(160, delayMillis = 80))
+            val exit = slideOutVertically(
+                tween(160, easing = FastOutSlowInEasing),
+                targetOffsetY = { it + travelPadding },
+            ) + fadeOut(tween(100))
+            (enter togetherWith exit) using SizeTransform(clip = false)
+        },
+        label = "Password action button",
+    ) { deleting ->
+        val currentAction = deleting == selecting
+        val label = stringResource(if (deleting) R.string.vault_delete_passwords else R.string.vault_add)
+        FloatingActionButton(
+            onClick = { if (enabled && currentAction) onClick() },
+            containerColor = if (deleting) colors.error else colors.primary,
+            modifier = Modifier.semantics {
+                if (!currentAction) hideFromAccessibility()
+                else {
+                    contentDescription = label
+                    if (!enabled) disabled()
+                }
+            },
+        ) {
+            Icon(if (deleting) MiuixIcons.Delete else MiuixIcons.Add, null, tint = colors.onPrimary)
+        }
+    }
+}
+
+/**
  * 展示可搜索的记录列表，并限制长行的阅读宽度。
  * @param state 搜索、排序与操作状态
  * @param snapshot 当前本的记录摘要
  * @param list 当前列表位置
  * @param modifier 列表区域
+ * @param active 是否允许列表接受操作
  * @param onQuery 修改当前搜索
  * @param onOpen 打开详情
+ * @param onToggleSelection 切换密码选择状态
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -551,8 +664,10 @@ private fun PasswordList(
     snapshot: VaultSnapshot,
     list: LazyListState,
     modifier: Modifier,
+    active: Boolean,
     onQuery: (String) -> Unit,
     onOpen: (Long) -> Unit,
+    onToggleSelection: (Long) -> Unit,
 ) {
     val focus = LocalFocusManager.current
     val locale = LocalConfiguration.current.locales[0]
@@ -615,10 +730,21 @@ private fun PasswordList(
                         PasswordListCard(
                             entry = entry,
                             type = snapshot.type(entry.typeId),
-                            enabled = !state.busy && state.page == null,
+                            enabled = active && !state.busy && state.page == null,
+                            selecting = state.selectedPasswordIds.isNotEmpty(),
+                            checked = entry.id in state.selectedPasswordIds,
+                            modifier = Modifier.animateItem(
+                                fadeInSpec = tween(120),
+                                placementSpec = spring(dampingRatio = 0.85f, stiffness = 400f),
+                                fadeOutSpec = tween(130),
+                            ),
                             onOpen = {
                                 focus.clearFocus()
                                 onOpen(entry.id)
+                            },
+                            onSelect = {
+                                focus.clearFocus(force = true)
+                                onToggleSelection(entry.id)
                             },
                         )
                     }
@@ -629,26 +755,59 @@ private fun PasswordList(
 }
 
 /**
- * 用原生按压卡片依次显示平台与密码。
+ * 弹性过渡卡片的选择底色、缩放与勾选标记。
  * @param entry 当前记录摘要
  * @param type 记录关联的密码类型
  * @param enabled 当前是否可以操作
+ * @param selecting 是否处于多选模式
+ * @param checked 当前密码是否选中
+ * @param modifier 列表项的增删和位置动画
  * @param onOpen 打开详情
+ * @param onSelect 长按或多选点击时切换选择
  */
 @Composable
 private fun PasswordListCard(
     entry: PasswordSummary,
     type: VaultCategory?,
     enabled: Boolean,
+    selecting: Boolean,
+    checked: Boolean,
+    modifier: Modifier = Modifier,
     onOpen: () -> Unit,
+    onSelect: () -> Unit,
 ) {
     val colors = MiuixTheme.colorScheme
+    val view = LocalView.current
+    val background by animateColorAsState(
+        if (checked) colors.primary.copy(alpha = 0.12f).compositeOver(colors.surfaceContainer) else colors.surfaceContainer,
+        spring(dampingRatio = 0.9f, stiffness = 450f), label = "Password selection color",
+    )
+    val scale by animateFloatAsState(
+        if (checked) 0.98f else 1f,
+        spring(dampingRatio = 0.65f, stiffness = 450f), label = "Password selection scale",
+    )
     Card(
-        modifier = Modifier.fillMaxWidth().semantics { if (!enabled) disabled() },
+        modifier = modifier.fillMaxWidth()
+            .animateContentSize(spring(dampingRatio = 0.85f, stiffness = 450f))
+            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .semantics(mergeDescendants = true) {
+                role = if (selecting) Role.Checkbox else Role.Button
+                if (selecting) toggleableState = if (checked) ToggleableState.On else ToggleableState.Off
+                if (!enabled) disabled()
+            },
         insideMargin = PaddingValues(Theme.spacing.medium),
+        colors = CardDefaults.defaultColors(background, colors.onSurfaceContainer),
         pressFeedbackType = PressFeedbackType.Sink,
         showIndication = true,
-        onClick = { if (enabled) onOpen() },
+        onClick = if (enabled) {
+            {
+                if (selecting) {
+                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                    onSelect()
+                } else onOpen()
+            }
+        } else null,
+        onLongPress = if (enabled) onSelect else null,
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -667,7 +826,26 @@ private fun PasswordListCard(
                     fontWeight = FontWeight.Medium,
                 )
             }
-            Icon(MiuixIcons.ChevronForward, null, Modifier.size(Theme.spacing.medium), tint = colors.onSurfaceVariantSummary)
+            AnimatedContent(
+                targetState = selecting,
+                modifier = Modifier.clearAndSetSemantics { },
+                transitionSpec = {
+                    (scaleIn(spring(dampingRatio = 0.65f, stiffness = 500f), initialScale = 0.65f) + fadeIn(tween(100)))
+                        .togetherWith(scaleOut(tween(90), targetScale = 0.65f) + fadeOut(tween(90)))
+                        .using(SizeTransform(clip = false) { _, _ -> spring(dampingRatio = 0.85f, stiffness = 450f) })
+                },
+                label = "Password selection indicator",
+            ) { selectionMode ->
+                if (selectionMode) {
+                    Checkbox(
+                        if (checked) ToggleableState.On else ToggleableState.Off,
+                        onClick = null, enabled = enabled,
+                    )
+                } else Icon(
+                    MiuixIcons.ChevronForward, null, Modifier.size(Theme.spacing.medium),
+                    tint = colors.onSurfaceVariantSummary,
+                )
+            }
         }
     }
 }
@@ -776,8 +954,12 @@ internal fun VaultTabbedPreview(state: VaultState) {
     val snapshot = state.snapshot ?: previewSnapshot(state.passwordPreview)
     MyPassTheme {
         VaultTopLevel(
-            state.copy(snapshot = snapshot), snapshot, remember { LazyListState() }, true,
-            {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, { _, _ -> }, {},
+            state = state.copy(snapshot = snapshot), snapshot = snapshot,
+            list = remember { LazyListState() }, active = true,
+            onTab = {}, onBook = {}, onManage = {}, onQuery = {}, onSort = {}, onPasswordPreview = {},
+            onChangeCredential = {}, onClear = {}, onOpen = {}, onAdd = {}, onGeneratorOptions = {},
+            onRefreshGenerated = {}, onCopyGenerated = { _, _ -> }, onOpenGenerationHistory = {},
+            onToggleSelection = {}, onClearSelection = {}, onDeleteSelected = {},
         )
     }
 }
@@ -789,6 +971,15 @@ internal fun VaultTabbedPreview(state: VaultState) {
 @Composable
 internal fun VaultHomePreview() {
     VaultTabbedPreview(VaultState())
+}
+
+/**
+ * 预览首页多选卡片和删除按钮。
+ */
+@VaultPreviews
+@Composable
+internal fun VaultHomeSelectionPreview() {
+    VaultTabbedPreview(VaultState(selectedPasswordIds = setOf(1L, 3L)))
 }
 
 /**
