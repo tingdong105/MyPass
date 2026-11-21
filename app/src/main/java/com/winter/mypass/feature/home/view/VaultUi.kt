@@ -99,6 +99,7 @@ internal object VaultLayout {
  * @param title 顶栏标题
  * @param navigationIcon 返回或关闭入口
  * @param actions 顶栏操作
+ * @param floatingActionButton 右下角浮动操作按钮
  * @param content 页面内容及其窗口边距
  */
 @Composable
@@ -106,6 +107,7 @@ internal fun VaultFrame(
     title: String,
     navigationIcon: @Composable () -> Unit = {},
     actions: @Composable RowScope.() -> Unit = {},
+    floatingActionButton: @Composable () -> Unit = {},
     content: @Composable (Modifier) -> Unit,
 ) {
     Scaffold(
@@ -118,6 +120,7 @@ internal fun VaultFrame(
                 )
             }
         },
+        floatingActionButton = floatingActionButton,
         contentWindowInsets = WindowInsets.safeDrawing.union(WindowInsets.ime),
     ) { insets ->
         content(Modifier.padding(insets).consumeWindowInsets(insets).fillMaxSize())

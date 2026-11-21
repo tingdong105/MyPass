@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -57,9 +58,12 @@ import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Checkbox
 import top.yukonga.miuix.kmp.basic.DropdownDefaults
 import top.yukonga.miuix.kmp.basic.DropdownImpl
+import top.yukonga.miuix.kmp.basic.FloatingActionButton
+import top.yukonga.miuix.kmp.basic.FloatingActionButtonDefaults
 import top.yukonga.miuix.kmp.basic.HorizontalDivider
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.ListPopupColumn
+import top.yukonga.miuix.kmp.basic.ListPopupDefaults
 import top.yukonga.miuix.kmp.basic.PopupPositionProvider
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
@@ -297,15 +301,25 @@ internal fun CategoryScreen(
     VaultFrame(
         title = stringResource(categoryTitle(kind)),
         navigationIcon = { VaultIcon(MiuixIcons.Back, R.string.lock_back, enabled = !busy, iconSize = VaultLayout.HeaderIconSize, onClick = onBack) },
-        actions = {
-            VaultIcon(MiuixIcons.Add, R.string.vault_new_category, enabled = !busy, iconSize = VaultLayout.HeaderIconSize) {
-                draft = CategoryDraft()
-                onClearProblem()
-                editing = true
+        floatingActionButton = {
+            FloatingActionButton(
+                onClick = {
+                    if (!busy) {
+                        draft = CategoryDraft()
+                        onClearProblem()
+                        editing = true
+                    }
+                },
+                modifier = Modifier.padding(horizontal = Theme.spacing.small),
+            ) {
+                Icon(
+                    MiuixIcons.Add, stringResource(R.string.vault_new_category),
+                    tint = MiuixTheme.colorScheme.onPrimary,
+                )
             }
         },
     ) { modifier ->
-        VaultColumn(modifier) {
+        VaultColumn(modifier, horizontalPadding = Theme.spacing.medium) {
             if (!editing) VaultErrorText(problem)
             if (categories.isEmpty()) {
                 Text(
@@ -330,6 +344,9 @@ internal fun CategoryScreen(
                     )
                 }
             }
+            if (categories.isNotEmpty()) Spacer(
+                Modifier.height(FloatingActionButtonDefaults.MinHeight + Theme.spacing.medium),
+            )
         }
         OverlayDialog(
             active && editing,
@@ -420,7 +437,14 @@ private fun CategoryRow(
         endActions = {
             Box {
                 VaultIcon(MiuixIcons.More, R.string.vault_category_actions, enabled) { menu = true }
-                OverlayListPopup(show = menu, onDismissRequest = { menu = false }) {
+                OverlayListPopup(
+                    show = menu,
+                    alignment = PopupPositionProvider.Align.End,
+                    popupPositionProvider = ListPopupDefaults.dropdownPositionProvider(
+                        horizontalMargin = Theme.spacing.small,
+                    ),
+                    onDismissRequest = { menu = false },
+                ) {
                     ListPopupColumn {
                         BasicComponent(title = stringResource(R.string.vault_rename), onClick = {
                             menu = false
