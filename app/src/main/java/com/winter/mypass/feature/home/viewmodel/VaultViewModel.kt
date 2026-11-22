@@ -11,6 +11,7 @@ import com.winter.mypass.feature.home.model.PasswordGroup
 import com.winter.mypass.feature.home.model.PasswordPreviewSettings
 import com.winter.mypass.feature.home.model.VaultClipboard
 import com.winter.mypass.feature.home.model.VaultException
+import com.winter.mypass.feature.home.model.VaultNavigationSettings
 import com.winter.mypass.feature.home.model.VaultOrder
 import com.winter.mypass.feature.home.model.VaultProblem
 import com.winter.mypass.feature.home.model.VaultRepository
@@ -24,7 +25,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.SerializationException
 
 /**
  * 解锁后可从底栏选择的页面。
@@ -136,6 +140,7 @@ internal data class VaultState(
     val snapshot: VaultSnapshot? = null,
     val sort: VaultSort = VaultSort(),
     val passwordPreview: PasswordPreviewSettings = PasswordPreviewSettings(),
+    val navigation: VaultNavigationSettings = VaultNavigationSettings(),
     val query: String = "",
     val selectedPasswordIds: Set<Long> = emptySet(),
     val tab: VaultTab = VaultTab.Home,
@@ -161,6 +166,19 @@ internal class VaultViewModel(
     private val current: VaultState get() = mutableState.value
     private var generation: Job? = null
     private var pendingGeneratedAddition: String? = null
+    private val navigationSaveMutex = Mutex()
+
+    /**
+     * 打开密码本前从本地读取的界面偏好。
+     * @author Tingdong
+     * @date 2026-11-22
+     */
+    private data class StoredPreferences(
+        val bookId: Long?,
+        val sort: VaultSort,
+        val preview: PasswordPreviewSettings,
+        val navigation: VaultNavigationSettings,
+    )
 
     init {
         startGeneration(current.generator.options)
@@ -168,19 +186,30 @@ internal class VaultViewModel(
     }
 
     /**
-     * 加载上次选择的密码本，恢复排序与密码显示偏好。
+     * 加载上次选择的密码本，恢复排序、密码显示和底栏样式。
      */
     fun load() = perform {
-        val (selected, sort, preview) = withContext(Dispatchers.IO) {
-            Triple(
-                MMKVUtils.getLong(BookKey).takeIf { it > 0 },
-                readSort(),
-                PasswordPreviewSettings.fromStorage(MMKVUtils.getString(PasswordVisibilityKey)),
+        val preferences = withContext(Dispatchers.IO) {
+            val navigation = try {
+                MMKVUtils.getObject<VaultNavigationSettings>(NavigationSettingsKey)
+            } catch (_: SerializationException) {
+                null
+            }
+            StoredPreferences(
+                bookId = MMKVUtils.getLong(BookKey).takeIf { it > 0 },
+                sort = readSort(),
+                preview = PasswordPreviewSettings.fromStorage(MMKVUtils.getString(PasswordVisibilityKey)),
+                navigation = navigation ?: VaultNavigationSettings(),
             )
         }
-        val snapshot = repository.snapshot(selected, preview)
+        val snapshot = repository.snapshot(preferences.bookId, preferences.preview)
         rememberBook(snapshot.bookId)
-        mutableState.value = current.copy(snapshot = snapshot, sort = sort, passwordPreview = preview)
+        mutableState.value = current.copy(
+            snapshot = snapshot,
+            sort = preferences.sort,
+            passwordPreview = preferences.preview,
+            navigation = preferences.navigation,
+        )
     }
 
     /**
@@ -188,7 +217,7 @@ internal class VaultViewModel(
      * @param tab 目标页面
      */
     fun selectTab(tab: VaultTab) {
-        if (!current.busy && current.page == null) {
+        if (current.tab != tab && !current.busy && current.page == null) {
             mutableState.value = current.copy(tab = tab, selectedPasswordIds = emptySet(), problem = null)
         }
     }
@@ -273,6 +302,30 @@ internal class VaultViewModel(
                 check(MMKVUtils.putString(PasswordVisibilityKey, "${preview.visibility.storageValue}:${preview.symbol}"))
             }
             mutableState.value = current.copy(snapshot = snapshot, passwordPreview = preview)
+        }
+    }
+
+    /**
+     * 在串行锁内合并最新偏好，成功后只更新底栏状态。
+     * @param update 对单个开关的修改
+     */
+    fun setNavigationSettings(update: (VaultNavigationSettings) -> VaultNavigationSettings) {
+        if (current.tab != VaultTab.Settings || current.page != null || current.busy) return
+        viewModelScope.launch {
+            navigationSaveMutex.withLock {
+                try {
+                    val navigation = update(current.navigation)
+                    if (navigation == current.navigation) return@withLock
+                    withContext(Dispatchers.IO) {
+                        check(MMKVUtils.putObject(NavigationSettingsKey, navigation))
+                    }
+                    mutableState.value = current.copy(navigation = navigation, problem = null)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    mutableState.value = current.copy(problem = VaultProblem.Storage)
+                }
+            }
         }
     }
 
@@ -692,6 +745,7 @@ internal class VaultViewModel(
         const val SortKey = "vault.sort"
         const val BookKey = "vault.current_book"
         const val PasswordVisibilityKey = "vault.password_visibility"
+        const val NavigationSettingsKey = "vault.navigation_settings"
         const val TypeKey = "vault.last_type"
     }
 }

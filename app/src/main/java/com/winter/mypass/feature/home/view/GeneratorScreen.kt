@@ -19,7 +19,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.selection.toggleable
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -39,7 +38,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
@@ -56,7 +54,6 @@ import com.winter.mypass.feature.home.viewmodel.VaultState
 import com.winter.mypass.feature.home.viewmodel.VaultTab
 import com.winter.mypass.ui.theme.Theme
 import kotlinx.coroutines.launch
-import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
@@ -69,7 +66,6 @@ import top.yukonga.miuix.kmp.basic.SnackbarDuration
 import top.yukonga.miuix.kmp.basic.SnackbarHost
 import top.yukonga.miuix.kmp.basic.SnackbarHostState
 import top.yukonga.miuix.kmp.basic.SnackbarResult
-import top.yukonga.miuix.kmp.basic.Switch
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Refresh
@@ -201,18 +197,18 @@ private fun GeneratorPanel(
         if (state.failed) VaultErrorText(VaultProblem.Storage)
         VaultGroup(Modifier.padding(top = Theme.spacing.small)) {
             GeneratorLength(options.length, enabled = !busy) { onOptions(options.copy(length = it)) }
-            GeneratorSwitch(
+            VaultSwitch(
                 R.string.vault_letters, options.letters, enabled = !busy && (!options.letters || options.digits || options.symbols),
             ) { onOptions(options.copy(letters = it)) }
             AnimatedVisibility(visible = options.letters) {
-                GeneratorSwitch(R.string.vault_uppercase, options.uppercase, enabled = !busy) {
+                VaultSwitch(R.string.vault_uppercase, options.uppercase, enabled = !busy) {
                     onOptions(options.copy(uppercase = it))
                 }
             }
-            GeneratorSwitch(
+            VaultSwitch(
                 R.string.vault_digits, options.digits, enabled = !busy && (!options.digits || options.letters || options.symbols),
             ) { onOptions(options.copy(digits = it)) }
-            GeneratorSwitch(
+            VaultSwitch(
                 R.string.vault_symbols, options.symbols, enabled = !busy && (!options.symbols || options.letters || options.digits),
             ) { onOptions(options.copy(symbols = it)) }
         }
@@ -368,31 +364,6 @@ private fun GeneratorLength(length: Int, enabled: Boolean, onChange: (Int) -> Un
             hapticEffect = SliderDefaults.SliderHapticEffect.None,
         )
     }
-}
-
-/**
- * 整行可切换的字符类型选项。
- * @param label 字符类型名称
- * @param checked 是否启用
- * @param enabled 是否可调
- * @param onChange 更新启用状态
- */
-@Composable
-private fun GeneratorSwitch(
-    @StringRes label: Int,
-    checked: Boolean,
-    enabled: Boolean,
-    onChange: (Boolean) -> Unit,
-) {
-    val view = LocalView.current
-    BasicComponent(
-        modifier = Modifier.toggleable(checked, enabled = enabled, role = Role.Switch) {
-            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-            onChange(it)
-        },
-        title = stringResource(label),
-        endActions = { Switch(checked, onCheckedChange = null, enabled = enabled) },
-    )
 }
 
 /**

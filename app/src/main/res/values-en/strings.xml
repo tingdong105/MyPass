@@ -87,6 +87,8 @@
     <string name="vault_password_visibility">Password visibility</string>
     <string name="vault_security_settings">Security</string>
     <string name="vault_style_settings">Appearance</string>
+    <string name="vault_floating_navigation">Floating bottom bar</string>
+    <string name="vault_liquid_glass">Liquid glass</string>
     <string name="vault_category_settings">Category management</string>
     <string name="vault_password_visibility_full">Show in full</string>
     <string name="vault_password_visibility_partial">Hide partially</string>

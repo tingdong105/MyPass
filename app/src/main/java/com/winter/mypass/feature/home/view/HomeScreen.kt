@@ -1,10 +1,10 @@
 package com.winter.mypass.feature.home.view
 
 import android.animation.ValueAnimator
+import android.os.Build
 import android.view.HapticFeedbackConstants
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedContentTransitionScope.SlideDirection
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterExitState
 import androidx.compose.animation.SizeTransform
@@ -34,12 +34,16 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.calculateEndPadding
+import androidx.compose.foundation.layout.calculateStartPadding
 import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.isImeVisible
@@ -54,6 +58,8 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -64,7 +70,9 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -107,16 +115,20 @@ import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.rosan.installer.ui.navigation.MainPagerState
+import com.rosan.installer.ui.navigation.rememberMainPagerState
 import com.winter.mypass.R
 import com.winter.mypass.feature.home.model.CategoryKind
 import com.winter.mypass.feature.home.model.PasswordPreviewSettings
 import com.winter.mypass.feature.home.model.PasswordSummary
 import com.winter.mypass.feature.home.model.VaultCategory
+import com.winter.mypass.feature.home.model.VaultNavigationSettings
 import com.winter.mypass.feature.home.model.VaultSnapshot
 import com.winter.mypass.feature.home.model.VaultSort
 import com.winter.mypass.feature.home.viewmodel.DetailPhase
@@ -139,14 +151,13 @@ import top.yukonga.miuix.kmp.basic.HorizontalDivider
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.InputField
 import top.yukonga.miuix.kmp.basic.MiuixScrollBehavior
-import top.yukonga.miuix.kmp.basic.NavigationBar
-import top.yukonga.miuix.kmp.basic.NavigationBarItem
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SnackbarHostState
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TopAppBar
 import top.yukonga.miuix.kmp.basic.VerticalDivider
+import top.yukonga.miuix.kmp.blur.layerBackdrop
 import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.extended.Add
 import top.yukonga.miuix.kmp.icon.extended.ChevronForward
@@ -257,6 +268,7 @@ internal fun VaultScreen(model: VaultViewModel, onBackup: () -> Unit, onChangeCr
                         onQuery = model::search,
                         onSort = model::sort,
                         onPasswordPreview = model::setPasswordPreview,
+                        onNavigationSettings = model::setNavigationSettings,
                         onChangeCredential = onChangeCredential,
                         onBackup = onBackup,
                         onClear = model::clearProblem,
@@ -435,6 +447,7 @@ private fun VaultThemeLayers(
  * @param onQuery 修改搜索词
  * @param onSort 修改排序
  * @param onPasswordPreview 修改密码预览设置
+ * @param onNavigationSettings 修改底栏样式偏好
  * @param onChangeCredential 打开启动密码修改页
  * @param onClear 清除错误反馈
  * @param onOpen 查看一条记录
@@ -464,6 +477,7 @@ private fun VaultTopLevel(
     onQuery: (String) -> Unit,
     onSort: (VaultSort) -> Unit,
     onPasswordPreview: (PasswordPreviewSettings) -> Unit,
+    onNavigationSettings: ((VaultNavigationSettings) -> VaultNavigationSettings) -> Unit,
     onChangeCredential: () -> Unit,
     onBackup: () -> Unit,
     onClear: () -> Unit,
@@ -481,46 +495,61 @@ private fun VaultTopLevel(
     val selected = state.selectedPasswordIds
     val selecting = selected.isNotEmpty()
     var confirmingDelete by remember(snapshot.bookId, state.tab, state.query, selecting, active) { mutableStateOf(false) }
+    var sortPopupOpen by remember(state.tab) { mutableStateOf(false) }
+    var settingsPopupOpen by remember(state.tab) { mutableStateOf(false) }
     val deleteConfirmationOpen = active && state.tab == VaultTab.Home && selecting && confirmingDelete
     val keyboard = WindowInsets.isImeVisible
-    val tabSlideDistance = with(LocalDensity.current) { 64.dp.roundToPx() }
+    val floatingNavigation = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && state.navigation.floating
+    val floating = !keyboard && floatingNavigation
+    val backdrop = if (floating) rememberVaultNavigationBackdrop() else null
     val modalOpen = state.page is VaultPage.Editor || state.page is VaultPage.Detail || deleteConfirmationOpen
     val background = if (modalOpen) Modifier.blockVaultBackgroundFocus() else Modifier
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val docked = maxWidth >= VaultLayout.DockedSidebarBreakpoint
         val home = state.tab == VaultTab.Home
         val drawerVisible = workspace.drawerOpen && home && !docked
-        BackHandler(!outgoing && active && !keyboard && (drawerVisible || !home)) {
+        val popupOpen = sortPopupOpen || settingsPopupOpen
+        val navigationEnabled = active && !outgoing && !modalOpen && !drawerVisible && !state.busy &&
+            !popupOpen
+        val pageSwipes = floating && navigationEnabled
+        val mainPager = rememberVaultTabPager(state.tab, pageSwipes, onTab)
+        val pager = mainPager.pagerState
+        BackHandler(!outgoing && active && !keyboard && !popupOpen && (drawerVisible || !home)) {
             if (drawerVisible) workspace.drawerOpen = false else onTab(VaultTab.Home)
         }
-        BackHandler(!outgoing && active && home && selecting && !drawerVisible) {
+        BackHandler(!outgoing && active && home && selecting && !drawerVisible && !popupOpen) {
             if (deleteConfirmationOpen) confirmingDelete = false else onClearSelection()
         }
         Scaffold(
             modifier = Modifier.fillMaxSize()
                 .then(if (drawerVisible) Modifier.semantics { hideFromAccessibility() } else Modifier),
-            bottomBar = { if (!keyboard) VaultNavigation(state.tab, onTab, background) },
+            bottomBar = {
+                if (!keyboard) VaultNavigation(
+                    tab = state.tab,
+                    settings = state.navigation,
+                    backdrop = backdrop,
+                    selectedIndex = { mainPager.selectedPage },
+                    enabled = navigationEnabled,
+                    onTab = {
+                        mainPager.animateToPage(it.ordinal)
+                        onTab(it)
+                    },
+                    modifier = background,
+                )
+            },
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
         ) { navigationInsets ->
-            AnimatedContent(
-                targetState = state.tab,
-                modifier = Modifier.padding(navigationInsets).consumeWindowInsets(navigationInsets)
-                    .fillMaxSize().clipToBounds().then(background),
-                transitionSpec = {
-                    val direction = if (targetState.ordinal > initialState.ordinal) {
-                        SlideDirection.Start
-                    } else SlideDirection.End
-                    val durationMillis = 220
-                    val enter = slideIntoContainer(direction, tween(durationMillis, easing = FastOutSlowInEasing)) {
-                        it.coerceIn(-tabSlideDistance, tabSlideDistance)
-                    } + fadeIn(tween(durationMillis, easing = FastOutSlowInEasing))
-                    val exit = slideOutOfContainer(direction, tween(durationMillis, easing = FastOutSlowInEasing)) {
-                        it.coerceIn(-tabSlideDistance, tabSlideDistance)
-                    } + fadeOut(tween(durationMillis, easing = FastOutSlowInEasing))
-                    (enter togetherWith exit) using null
-                },
-                label = "Vault tabs",
-            ) { tab ->
+            val tabInsets = if (floating) Modifier else Modifier.padding(navigationInsets).consumeWindowInsets(navigationInsets)
+            val backdropModifier = if (backdrop == null) Modifier else Modifier.layerBackdrop(backdrop)
+            HorizontalPager(
+                state = pager,
+                modifier = tabInsets.fillMaxSize().clipToBounds().then(backdropModifier).then(background),
+                userScrollEnabled = pageSwipes,
+                overscrollEffect = null,
+                beyondViewportPageCount = if (floatingNavigation) 1 else 0,
+                key = { VaultTab.entries[it] },
+            ) { page ->
+                val tab = VaultTab.entries[page]
                 val homePage = tab == VaultTab.Home
                 val generatorScroll = if (tab == VaultTab.Generate) MiuixScrollBehavior() else null
                 val generatorSnackbar = remember { SnackbarHostState() }
@@ -537,16 +566,20 @@ private fun VaultTopLevel(
                     if (homePage && !selecting) SortMenu(
                         state.sort, state.busy, state.problem, onSort,
                         onOpen = {
+                            sortPopupOpen = true
                             focus.clearFocus()
                             onClear()
                         },
-                        onDismiss = onClear,
+                        onDismiss = {
+                            sortPopupOpen = false
+                            onClear()
+                        },
                     )
                 }
                 Scaffold(
                     modifier = Modifier.fillMaxSize()
                         .then(if (generatorScroll == null) Modifier else Modifier.nestedScroll(generatorScroll.nestedScrollConnection))
-                        .then(if (tab != state.tab) Modifier.semantics { hideFromAccessibility() } else Modifier),
+                        .then(if (tab != state.tab) Modifier.blockVaultBackgroundFocus() else Modifier),
                     topBar = {
                         if (!homePage || !docked) {
                             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
@@ -585,6 +618,10 @@ private fun VaultTopLevel(
                         }
                     },
                     snackbarHost = { if (tab == VaultTab.Generate) GeneratorSnackbarHost(generatorSnackbar) },
+                    bottomBar = {
+                        // 用外层实测高度定位悬浮按钮和提示，页面内容继续绘制到底栏下方。
+                        if (floating) Spacer(Modifier.height(navigationInsets.calculateBottomPadding()))
+                    },
                     floatingActionButton = {
                         if (homePage && !keyboard && !drawerVisible) PasswordActionFab(
                             selecting = selecting,
@@ -598,12 +635,20 @@ private fun VaultTopLevel(
                     },
                     contentWindowInsets = WindowInsets.safeDrawing.union(WindowInsets.ime),
                 ) { insets ->
-                    val body = Modifier.padding(insets).consumeWindowInsets(insets).fillMaxSize()
+                    val floatingClearance = if (floating) insets.calculateBottomPadding() else 0.dp
+                    val layoutDirection = LocalLayoutDirection.current
+                    val bodyInsets = if (floating) PaddingValues(
+                        start = insets.calculateStartPadding(layoutDirection),
+                        top = insets.calculateTopPadding(),
+                        end = insets.calculateEndPadding(layoutDirection),
+                    ) else insets
+                    val body = Modifier.padding(bodyInsets).consumeWindowInsets(bodyInsets).fillMaxSize()
                     when (tab) {
                         VaultTab.Home -> Row(body) {
                             if (docked) {
                                 BookSidebar(
-                                    snapshot, state.busy, Modifier.width(VaultLayout.DockedSidebarWidth).fillMaxHeight(),
+                                    snapshot, state.busy, Modifier.width(VaultLayout.DockedSidebarWidth)
+                                        .fillMaxHeight().padding(bottom = floatingClearance),
                                     workspace.books, onBook, { onManage(CategoryKind.Book) },
                                     onToggleTheme = themeToggle.takeIf { active && home && !keyboard && !modalOpen },
                                 )
@@ -619,20 +664,24 @@ private fun VaultTopLevel(
                                 PasswordList(
                                     state, snapshot, workspace.passwords, Modifier.fillMaxWidth().weight(1f),
                                     active && home && !drawerVisible && !deleteConfirmationOpen,
-                                    onQuery, onOpen, onToggleSelection, emptyPlayback,
+                                    onQuery, onOpen, onToggleSelection, emptyPlayback, floatingClearance,
                                 )
                             }
                         }
-                        VaultTab.Generate -> VaultColumn(body, horizontalPadding = Theme.spacing.medium) {
+                        VaultTab.Generate -> VaultColumn(body, Theme.spacing.medium, floatingClearance) {
                             VaultErrorText(state.problem)
                             GeneratorPage(
                                 state.generator, state.busy, onGeneratorOptions, onRefreshGenerated,
                                 onCopyGenerated, onAdd, generatorSnackbar,
                             )
                         }
-                        VaultTab.Settings -> VaultColumn(body, horizontalPadding = Theme.spacing.medium) {
+                        VaultTab.Settings -> VaultColumn(body, Theme.spacing.medium, floatingClearance) {
                             VaultErrorText(state.problem)
-                            VaultSettings(state.passwordPreview, state.busy, onPasswordPreview, onChangeCredential, onBackup, onManage)
+                            VaultSettings(
+                                state.passwordPreview, state.navigation, state.busy, onPasswordPreview,
+                                onNavigationSettings, onChangeCredential, onBackup, onManage,
+                                onPopupVisibility = { settingsPopupOpen = it },
+                            )
                         }
                     }
                 }
@@ -665,6 +714,43 @@ private fun VaultTopLevel(
             onToggleTheme = themeToggle.takeIf { active && !keyboard },
         )
     }
+}
+
+/**
+ * 用 InstallerX 原始控制器连接 MyPass 的标签状态。
+ * @param tab ViewModel 已确认的标签
+ * @param allowSwipes 页面是否可以横滑
+ * @param onTab 提交停稳后的标签
+ * @return InstallerX 26.09 原始分页控制器
+ */
+@Composable
+private fun rememberVaultTabPager(
+    tab: VaultTab,
+    allowSwipes: Boolean,
+    onTab: (VaultTab) -> Unit,
+): MainPagerState {
+    val pager = rememberPagerState(initialPage = tab.ordinal) { VaultTab.entries.size }
+    val mainPager = rememberMainPagerState(pager)
+    val confirmedTab by rememberUpdatedState(tab)
+    val swipesEnabled by rememberUpdatedState(allowSwipes)
+    val selectTab by rememberUpdatedState(onTab)
+    LaunchedEffect(mainPager, tab) {
+        mainPager.animateToPage(tab.ordinal)
+    }
+    LaunchedEffect(mainPager) {
+        snapshotFlow { pager.currentPage }.collect {
+            mainPager.syncPage()
+        }
+    }
+    LaunchedEffect(mainPager) {
+        snapshotFlow { pager.settledPage to pager.isScrollInProgress }.collect { (page, scrolling) ->
+            if (!scrolling && !mainPager.isNavigating && page != confirmedTab.ordinal) {
+                if (swipesEnabled) selectTab(VaultTab.entries[page])
+                else mainPager.animateToPage(confirmedTab.ordinal)
+            }
+        }
+    }
+    return mainPager
 }
 
 /**
@@ -715,30 +801,6 @@ private fun VaultTabHeader(
             overflow = TextOverflow.Ellipsis,
         )
         actions()
-    }
-}
-
-/**
- * 底部导航的三个顶层目的地。
- * @param tab 当前标签
- * @param onTab 切换当前标签
- * @param modifier 底栏的位置和无障碍属性
- */
-@Composable
-private fun VaultNavigation(tab: VaultTab, onTab: (VaultTab) -> Unit, modifier: Modifier = Modifier) {
-    NavigationBar(modifier = modifier) {
-        NavigationBarItem(
-            tab == VaultTab.Home, { onTab(VaultTab.Home) },
-            ImageVector.vectorResource(R.drawable.ic_vault_home), stringResource(R.string.vault_home),
-        )
-        NavigationBarItem(
-            tab == VaultTab.Generate, { onTab(VaultTab.Generate) },
-            ImageVector.vectorResource(R.drawable.ic_vault_generate), stringResource(R.string.vault_generate),
-        )
-        NavigationBarItem(
-            tab == VaultTab.Settings, { onTab(VaultTab.Settings) },
-            ImageVector.vectorResource(R.drawable.ic_vault_settings), stringResource(R.string.vault_settings),
-        )
     }
 }
 
@@ -797,6 +859,7 @@ private fun PasswordActionFab(selecting: Boolean, enabled: Boolean, onClick: () 
  * @param onOpen 打开详情
  * @param onToggleSelection 切换密码选择状态
  * @param emptyPlayback 空托盘动画进度
+ * @param floatingClearance 悬浮底栏占用的底部高度
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -810,6 +873,7 @@ private fun PasswordList(
     onOpen: (Long) -> Unit,
     onToggleSelection: (Long) -> Unit,
     emptyPlayback: VaultEmptyPlayback?,
+    floatingClearance: Dp,
 ) {
     val focus = LocalFocusManager.current
     val locale = LocalConfiguration.current.locales[0]
@@ -838,7 +902,7 @@ private fun PasswordList(
                 verticalArrangement = Arrangement.spacedBy(Theme.spacing.small),
                 contentPadding = PaddingValues(
                     top = if (entries.isEmpty()) 0.dp else Theme.spacing.medium,
-                    bottom = when {
+                    bottom = floatingClearance + when {
                         entries.isEmpty() -> 0.dp
                         keyboard -> Theme.spacing.medium
                         else -> 88.dp
@@ -1137,6 +1201,7 @@ internal fun VaultTabbedPreview(state: VaultState, showDrawer: Boolean = false) 
                 state = state.copy(snapshot = snapshot), snapshot = snapshot, active = true,
                 workspace = workspace, themeToggle = themeToggle, emptyPlayback = emptyPlayback, outgoing = outgoing,
                 onTab = {}, onBook = {}, onManage = {}, onQuery = {}, onSort = {}, onPasswordPreview = {},
+                onNavigationSettings = {},
                 onChangeCredential = {}, onBackup = {}, onClear = {}, onOpen = {}, onAdd = {}, onGeneratorOptions = {},
                 onRefreshGenerated = {}, onCopyGenerated = { _, _ -> }, onOpenGenerationHistory = {},
                 onToggleSelection = {}, onClearSelection = {}, onDeleteSelected = {},

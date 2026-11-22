@@ -1,6 +1,7 @@
 package com.winter.mypass.feature.home.view
 
 import android.content.res.Configuration
+import android.view.HapticFeedbackConstants
 import androidx.annotation.StringRes
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -25,6 +26,7 @@ import androidx.compose.foundation.layout.union
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
@@ -34,6 +36,7 @@ import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -58,6 +61,7 @@ import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.RadioButton
 import top.yukonga.miuix.kmp.basic.Scaffold
 import top.yukonga.miuix.kmp.basic.SmallTopAppBar
+import top.yukonga.miuix.kmp.basic.Switch
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.icon.MiuixIcons
@@ -137,23 +141,53 @@ internal fun VaultFrame(
  * 以统一的阅读宽度容纳滚动表单或详情。
  * @param modifier 已处理窗口边距的区域
  * @param horizontalPadding 内容相对页面两侧的边距
+ * @param bottomClearance 滚动到底时需要避开的悬浮底栏高度
  * @param content 页面分组
  */
 @Composable
 internal fun VaultColumn(
     modifier: Modifier,
     horizontalPadding: Dp = Theme.spacing.large,
+    bottomClearance: Dp = 0.dp,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Box(modifier.verticalScroll(rememberScrollState()), contentAlignment = Alignment.TopCenter) {
         Column(
             Modifier.widthIn(max = VaultLayout.PaneWidth).fillMaxWidth()
                 .padding(horizontal = horizontalPadding)
-                .padding(top = Theme.spacing.medium, bottom = Theme.spacing.large),
+                .padding(top = Theme.spacing.medium, bottom = Theme.spacing.large + bottomClearance),
             verticalArrangement = Arrangement.spacedBy(Theme.spacing.large),
             content = content,
         )
     }
+}
+
+/**
+ * 显示带触感反馈的整行开关。
+ * @param label 开关名称
+ * @param checked 是否开启
+ * @param enabled 是否可以切换
+ * @param icon 可选的行首图标
+ * @param onChange 保存新的开关状态
+ */
+@Composable
+internal fun VaultSwitch(
+    @StringRes label: Int,
+    checked: Boolean,
+    enabled: Boolean,
+    icon: ImageVector? = null,
+    onChange: (Boolean) -> Unit,
+) {
+    val view = LocalView.current
+    BasicComponent(
+        modifier = Modifier.toggleable(checked, enabled = enabled, role = Role.Switch) {
+            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+            onChange(it)
+        },
+        title = stringResource(label),
+        startAction = icon?.let { { Icon(it, null, Modifier.size(22.dp)) } },
+        endActions = { Switch(checked, onCheckedChange = null, enabled = enabled) },
+    )
 }
 
 /**

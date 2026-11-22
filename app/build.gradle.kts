@@ -103,6 +103,9 @@ dependencies {
     // Miuix 主界面组件、主题与扩展图标
     implementation(libs.miuix.ui)
     implementation(libs.miuix.icons)
+    // InstallerX 原始底栏使用的背景采样、着色器与双主题前景色
+    implementation(libs.miuix.blur)
+    implementation(libs.androidx.compose.material3)
     // Lottie动画依赖
     implementation(libs.lottie.compose)
 

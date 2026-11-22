@@ -1,6 +1,7 @@
 package com.winter.mypass.feature.home.model
 
 import android.icu.text.IDNA
+import kotlinx.serialization.Serializable
 import java.net.URI
 import java.net.URISyntaxException
 import java.text.Collator
@@ -27,6 +28,17 @@ internal data class VaultCategory(
  * @date 2026-11-19
  */
 internal enum class CategoryKind { Book, Tag, Type }
+
+/**
+ * 保存悬浮导航及其液态玻璃样式偏好。
+ * @author Tingdong
+ * @date 2026-11-22
+ */
+@Serializable
+internal data class VaultNavigationSettings(
+    val floating: Boolean = false,
+    val liquidGlass: Boolean = false,
+)
 
 /**
  * 列表展示和搜索使用的记录摘要。

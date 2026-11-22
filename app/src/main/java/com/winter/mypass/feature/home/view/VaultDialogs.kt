@@ -1,7 +1,14 @@
 package com.winter.mypass.feature.home.view
 
+import android.os.Build
 import androidx.activity.compose.BackHandler
 import androidx.annotation.StringRes
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,15 +29,19 @@ import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -45,6 +56,7 @@ import com.winter.mypass.feature.home.model.PasswordPreviewSettings
 import com.winter.mypass.feature.home.model.PasswordSummary
 import com.winter.mypass.feature.home.model.PasswordVisibility
 import com.winter.mypass.feature.home.model.VaultCategory
+import com.winter.mypass.feature.home.model.VaultNavigationSettings
 import com.winter.mypass.feature.home.model.VaultOrder
 import com.winter.mypass.feature.home.model.VaultProblem
 import com.winter.mypass.feature.home.model.VaultSnapshot
@@ -463,25 +475,39 @@ private fun CategoryRow(
 }
 
 /**
- * 提供启动密码、密码预览和分类管理入口。
+ * 提供启动密码、界面样式和分类管理入口。
  * @param preview 当前显示模式与遮罩符号
+ * @param navigation 当前底栏样式偏好
  * @param busy 是否正在保存设置
  * @param onPasswordPreview 保存预览设置
+ * @param onNavigationSettings 保存底栏样式偏好
  * @param onChangeCredential 打开启动密码修改页
+ * @param onBackup 打开备份页
  * @param onManage 打开对应分类
+ * @param onPopupVisibility 通知顶层是否正在显示设置弹层
  */
 @Composable
 internal fun VaultSettings(
     preview: PasswordPreviewSettings,
+    navigation: VaultNavigationSettings,
     busy: Boolean,
     onPasswordPreview: (PasswordPreviewSettings) -> Unit,
+    onNavigationSettings: ((VaultNavigationSettings) -> VaultNavigationSettings) -> Unit,
     onChangeCredential: () -> Unit,
     onBackup: () -> Unit,
     onManage: (CategoryKind) -> Unit,
+    onPopupVisibility: (Boolean) -> Unit,
 ) {
     var choosingSymbol by remember { mutableStateOf(false) }
+    var choosingVisibility by remember { mutableStateOf(false) }
     var customSymbol by remember { mutableStateOf<String?>(null) }
     val symbolTitle = stringResource(R.string.vault_mask_symbol)
+    val popupVisibility by rememberUpdatedState(onPopupVisibility)
+    val popupOpen = choosingSymbol || choosingVisibility
+    DisposableEffect(popupOpen) {
+        popupVisibility(popupOpen)
+        onDispose { if (popupOpen) popupVisibility(false) }
+    }
     SettingsSection(R.string.vault_security_settings) {
         VaultLink(
             stringResource(R.string.backup_title),
@@ -498,13 +524,39 @@ internal fun VaultSettings(
         )
     }
     SettingsSection(R.string.vault_style_settings) {
-        PasswordVisibilityMenu(preview.visibility, busy) { onPasswordPreview(preview.copy(visibility = it)) }
+        PasswordVisibilityMenu(
+            preview.visibility, busy, choosingVisibility, { choosingVisibility = it },
+        ) { onPasswordPreview(preview.copy(visibility = it)) }
         VaultRowDivider()
         VaultLink(symbolTitle, enabled = !busy, icon = MiuixIcons.Lock, value = preview.symbol) {
             customSymbol = preview.symbol.takeUnless {
                 it == PasswordPreviewSettings.Asterisk || it == PasswordPreviewSettings.Dot
             }
             choosingSymbol = true
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            VaultRowDivider()
+            VaultSwitch(
+                R.string.vault_floating_navigation, navigation.floating, enabled = !busy,
+                icon = ImageVector.vectorResource(R.drawable.ic_vault_floating_bar),
+            ) { checked ->
+                onNavigationSettings { latest -> latest.copy(floating = checked) }
+            }
+            AnimatedVisibility(
+                visible = navigation.floating,
+                enter = expandVertically(tween(220), expandFrom = Alignment.Top) + fadeIn(tween(160)),
+                exit = shrinkVertically(tween(180), shrinkTowards = Alignment.Top) + fadeOut(tween(140)),
+            ) {
+                Column {
+                    VaultRowDivider()
+                    VaultSwitch(
+                        R.string.vault_liquid_glass, navigation.liquidGlass, enabled = !busy && navigation.floating,
+                        icon = ImageVector.vectorResource(R.drawable.ic_vault_liquid_glass),
+                    ) { checked ->
+                        onNavigationSettings { latest -> latest.copy(liquidGlass = checked) }
+                    }
+                }
+            }
         }
     }
     SettingsSection(R.string.vault_category_settings) {
@@ -590,23 +642,26 @@ internal fun SettingsSection(@StringRes title: Int, content: @Composable ColumnS
  * 在密码显示设置行的右侧展开单选菜单。
  * @param visibility 当前显示模式
  * @param busy 是否正在保存
+ * @param show 是否展开菜单
+ * @param onShow 修改菜单展开状态
  * @param onSelect 应用菜单选项
  */
 @Composable
 private fun PasswordVisibilityMenu(
     visibility: PasswordVisibility,
     busy: Boolean,
+    show: Boolean,
+    onShow: (Boolean) -> Unit,
     onSelect: (PasswordVisibility) -> Unit,
 ) {
-    var show by remember { mutableStateOf(false) }
     Box {
         VaultLink(
             stringResource(R.string.vault_password_visibility), enabled = !busy,
             icon = MiuixIcons.Show, value = stringResource(visibility.label),
-        ) { show = true }
+        ) { onShow(true) }
         OverlayListPopup(
             show = show, alignment = PopupPositionProvider.Align.End,
-            enableWindowDim = true, onDismissRequest = { show = false },
+            enableWindowDim = true, onDismissRequest = { onShow(false) },
         ) {
             ListPopupColumn {
                 PasswordVisibility.entries.forEachIndexed { index, mode ->
@@ -615,7 +670,7 @@ private fun PasswordVisibilityMenu(
                         optionSize = PasswordVisibility.entries.size,
                         isSelected = mode == visibility, index = index, enabled = !busy,
                         onSelectedIndexChange = {
-                            show = false
+                            onShow(false)
                             if (mode != visibility) onSelect(mode)
                         },
                     )
@@ -731,4 +786,15 @@ internal fun CategoryPreview() {
 @Composable
 internal fun SettingsPreview() {
     VaultTabbedPreview(VaultState(tab = VaultTab.Settings))
+}
+
+/**
+ * 预览悬浮导航开启时的两个样式开关。
+ */
+@VaultPreviews
+@Composable
+internal fun FloatingNavigationSettingsPreview() {
+    VaultTabbedPreview(
+        VaultState(tab = VaultTab.Settings, navigation = VaultNavigationSettings(floating = true, liquidGlass = true)),
+    )
 }

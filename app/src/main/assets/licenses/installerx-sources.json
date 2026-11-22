@@ -1,0 +1,42 @@
+{
+  "tag": "26.09",
+  "files": [
+    {
+      "path": "app/src/main/java/com/rosan/installer/ui/animation/DampedDragAnimation.kt",
+      "sha256": "cf2f558e13d71315c4c578cdbfc7b68716dcc8b002fc9b629505b28e2b4edda2"
+    },
+    {
+      "path": "app/src/main/java/com/rosan/installer/ui/animation/InteractiveHighlight.kt",
+      "sha256": "22232362eb9f9d5888837e33a92b920565570373cc67280f91c826b5c7985934"
+    },
+    {
+      "path": "app/src/main/java/com/rosan/installer/ui/library/FloatingBottomBar.kt",
+      "sha256": "516efca2a9e49b01bc97552b53abee519e0b667a4ef027767ec66ef7b2cf38d3"
+    },
+    {
+      "path": "app/src/main/java/com/rosan/installer/ui/library/liquid/CombinedBackdrop.kt",
+      "sha256": "c0673e567da1b1b35025916a701bdfdee426aa24512d4abb8b95eec9770a7454"
+    },
+    {
+      "path": "app/src/main/java/com/rosan/installer/ui/library/liquid/InnerShadow.kt",
+      "sha256": "acb8bf2660c02e34e33d5a6ac71d1b3e6176a13375ceb6ad977c0bc0186f087f"
+    },
+    {
+      "path": "app/src/main/java/com/rosan/installer/ui/library/liquid/Lens.kt",
+      "sha256": "005e03f8ced4d0a596dc0359c9bd0ed57ceab41a68c6043d19ceddc0633b7a08"
+    },
+    {
+      "path": "app/src/main/java/com/rosan/installer/ui/library/liquid/Vibrancy.kt",
+      "sha256": "5c4b2ba700230a9ab87894b50fec676915273b1360cbe638c1f67e89974cec78"
+    },
+    {
+      "path": "app/src/main/java/com/rosan/installer/ui/navigation/PagerState.kt",
+      "sha256": "5db0f027dd3e2b514904e2cf5e7b7680619fe12257d5eecd41309b4a1a8d8ddf"
+    },
+    {
+      "path": "app/src/main/java/com/rosan/installer/ui/util/DragGestureInspector.kt",
+      "sha256": "6a4fa9a506feb37558730d32bedeb5d392162778429e6fcafad357b2a16b46f4"
+    }
+  ],
+  "repository": "https://github.com/wxxsfxyzm/InstallerX-Revived"
+}

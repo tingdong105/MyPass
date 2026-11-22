@@ -86,6 +86,8 @@
     <string name="vault_password_visibility">密码显示</string>
     <string name="vault_security_settings">安全</string>
     <string name="vault_style_settings">样式设置</string>
+    <string name="vault_floating_navigation">悬浮底栏</string>
+    <string name="vault_liquid_glass">液态玻璃</string>
     <string name="vault_category_settings">分类管理</string>
     <string name="vault_password_visibility_full">全显示</string>
     <string name="vault_password_visibility_partial">半隐藏</string>
