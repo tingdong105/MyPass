@@ -6,15 +6,10 @@
 
 **让一个密码管理全部密码**
 
-把零散的账号密码，收进自己的密码本。
-
 本地加密存储 · 多密码本分类 · 随机密码生成 · 自选云端备份
 
 <p>
-  <img src="https://img.shields.io/badge/开发阶段-Beta-orange?style=flat-square" alt="开发阶段：Beta" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue?style=flat-square" alt="开源协议：MIT" /></a>
-  <img src="https://img.shields.io/badge/Kotlin-7F52FF?style=flat-square&logo=kotlin&logoColor=white" alt="Kotlin" />
-  <img src="https://img.shields.io/badge/Jetpack_Compose-4285F4?style=flat-square&logo=jetpackcompose&logoColor=white" alt="Jetpack Compose" />
   <img src="https://img.shields.io/badge/UI-Miuix-FABB79?style=flat-square" alt="Miuix 界面" />
   <img src="https://img.shields.io/badge/Android-9.0%2B-3DDC84?style=flat-square&logo=android&logoColor=white" alt="Android 9.0 及以上" />
   <a href="../../releases"><img src="https://img.shields.io/badge/下载-Releases-2EA44F?style=flat-square&logo=github&logoColor=white" alt="前往 Releases 下载" /></a>
@@ -31,8 +26,6 @@
 **我的密码本（MyPass）**是一款使用 Kotlin + Jetpack Compose 开发的 Android 个人密码管理工具。通过一个主密码解锁，集中保存账号、密码、网址、邮箱和备注，再按密码本、标签与类型整理，方便随时查找和复制。
 
 日常管理可离线使用，无需注册 MyPass 账号；需要备份时，可以导出本地文件，也可以连接自己的 WebDAV 或对象存储服务。界面采用 Miuix，支持明暗主题和可选的悬浮玻璃底栏。
-
-项目目前处于 **Beta 开发阶段**，以下介绍以当前源码已实现的功能为准，发布包的具体内容请查看对应版本说明。
 
 ## 功能一览
 
