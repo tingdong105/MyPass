@@ -15,10 +15,10 @@ plugins {
 }
 
 // 调试模式开关
-val isDebug = true
+val isDebug = false
 
 // APP版本名称
-val appVerName = "Beta-1.0.0"
+val appVerName = "1.0.0"
 
 // APP包名
 val appPackageName = "com.winter.mypass"
