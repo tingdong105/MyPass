@@ -149,6 +149,13 @@ internal data class GeneratorState(
 }
 
 /**
+ * 固定本次移动的来源、选择和待确认的目标密码本。
+ * @author Tingdong
+ * @date 2026-11-23
+ */
+internal data class PasswordMove(val bookId: Long, val ids: Set<Long>, val targetBookId: Long? = null)
+
+/**
  * 解锁期间的密码本界面状态。
  * @author Tingdong
  * @date 2026-11-19
@@ -162,6 +169,8 @@ internal data class VaultState(
     val query: String = "",
     val typeFilterId: Long? = null,
     val selectedPasswordIds: Set<Long> = emptySet(),
+    val passwordMove: PasswordMove? = null,
+    val passwordMoveSucceeded: Boolean = false,
     val tab: VaultTab = VaultTab.Home,
     val page: VaultPage? = null,
     val generator: GeneratorState = GeneratorState(),
@@ -246,7 +255,7 @@ internal class VaultViewModel(
      * @param tab 目标页面
      */
     fun selectTab(tab: VaultTab) {
-        if (current.tab != tab && !current.busy && current.page == null) {
+        if (current.tab != tab && !current.busy && current.page == null && current.passwordMove == null) {
             mutableState.value = current.copy(tab = tab, selectedPasswordIds = emptySet(), problem = null)
         }
     }
@@ -266,7 +275,7 @@ internal class VaultViewModel(
      * @param query 查询内容
      */
     fun search(query: String) {
-        if (current.busy || current.page != null || query == current.query) return
+        if (current.busy || current.page != null || current.passwordMove != null || query == current.query) return
         mutableState.value = current.copy(query = query, selectedPasswordIds = emptySet())
     }
 
@@ -275,7 +284,9 @@ internal class VaultViewModel(
      * @param typeId 类型标识，空值表示全部类型
      */
     fun filterType(typeId: Long?) {
-        if (current.busy || current.page != null || current.tab != VaultTab.Home || current.typeFilterId == typeId) return
+        if (current.busy || current.page != null || current.passwordMove != null ||
+            current.tab != VaultTab.Home || current.typeFilterId == typeId
+        ) return
         if (typeId != null && current.snapshot?.types?.none { it.id == typeId } != false) return
         mutableState.value = current.copy(typeFilterId = typeId, selectedPasswordIds = emptySet(), problem = null)
     }
@@ -285,7 +296,7 @@ internal class VaultViewModel(
      * @param id 密码记录标识
      */
     fun togglePasswordSelection(id: Long) {
-        if (current.busy || current.page != null || current.tab != VaultTab.Home) return
+        if (current.busy || current.page != null || current.passwordMove != null || current.tab != VaultTab.Home) return
         if (current.snapshot?.passwords?.none { it.id == id } != false) return
         val selected = current.selectedPasswordIds
         mutableState.value = current.copy(
@@ -298,7 +309,9 @@ internal class VaultViewModel(
      * 退出首页多选并清理操作错误。
      */
     fun clearPasswordSelection() {
-        if (!current.busy) mutableState.value = current.copy(selectedPasswordIds = emptySet(), problem = null)
+        if (!current.busy && current.passwordMove == null) {
+            mutableState.value = current.copy(selectedPasswordIds = emptySet(), problem = null)
+        }
     }
 
     /**
@@ -312,6 +325,73 @@ internal class VaultViewModel(
         performFromTabs {
             val updated = repository.deletePasswords(ids, snapshot.bookId, current.passwordPreview)
             mutableState.value = current.copy(snapshot = updated, selectedPasswordIds = emptySet())
+        }
+    }
+
+    /**
+     * 保存当前选择并打开目标密码本选择框。
+     */
+    fun openPasswordMove() {
+        val snapshot = current.snapshot ?: return
+        if (current.busy || current.page != null || current.passwordMove != null ||
+            current.tab != VaultTab.Home || snapshot.books.size < 2
+        ) return
+        val ids = current.selectedPasswordIds.intersect(snapshot.passwords.map { it.id }.toSet())
+        if (ids.isEmpty()) return
+        mutableState.value = current.copy(passwordMove = PasswordMove(snapshot.bookId, ids), problem = null)
+    }
+
+    /**
+     * 取消移动并保留原来的多选状态。
+     */
+    fun dismissPasswordMove() {
+        if (!current.busy) mutableState.value = current.copy(passwordMove = null, problem = null)
+    }
+
+    /**
+     * 消费移动成功提示，避免页面重建时重复展示。
+     */
+    fun consumePasswordMoveSuccess() {
+        if (current.passwordMoveSucceeded) mutableState.value = current.copy(passwordMoveSucceeded = false)
+    }
+
+    /**
+     * 移动到所选密码本，遇到重复项时等待用户确认。
+     * @param targetBookId 目标密码本标识
+     */
+    fun moveSelectedPasswords(targetBookId: Long) = movePasswords(targetBookId, allowDuplicate = false)
+
+    /**
+     * 按已固定的目标和选择确认移动重复记录。
+     */
+    fun confirmPasswordMove() {
+        val target = current.passwordMove?.targetBookId ?: return
+        movePasswords(target, allowDuplicate = true)
+    }
+
+    /**
+     * 串行提交移动，成功后刷新列表与计数并退出多选。
+     * @param targetBookId 目标密码本标识
+     * @param allowDuplicate 是否已确认保留重复记录
+     */
+    private fun movePasswords(targetBookId: Long, allowDuplicate: Boolean) {
+        val move = current.passwordMove ?: return
+        val snapshot = current.snapshot ?: return
+        if (current.tab != VaultTab.Home || current.page != null || snapshot.bookId != move.bookId ||
+            targetBookId == move.bookId || snapshot.books.none { it.id == targetBookId } ||
+            (move.targetBookId != null && (!allowDuplicate || move.targetBookId != targetBookId))
+        ) return
+        perform {
+            val updated = try {
+                repository.movePasswords(move.ids, move.bookId, targetBookId, current.passwordPreview, allowDuplicate)
+            } catch (failure: VaultException) {
+                if (allowDuplicate || failure.problem != VaultProblem.DuplicatePassword) throw failure
+                mutableState.value = current.copy(passwordMove = move.copy(targetBookId = targetBookId))
+                return@perform
+            }
+            mutableState.value = current.copy(
+                snapshot = updated, selectedPasswordIds = emptySet(), passwordMove = null, passwordMoveSucceeded = true,
+            )
         }
     }
 
@@ -397,7 +477,7 @@ internal class VaultViewModel(
      */
     fun newPassword(password: String = "") {
         val book = current.snapshot?.bookId ?: return
-        if (current.page != null) return
+        if (current.page != null || current.passwordMove != null) return
         if (current.busy) {
             if (current.tab == VaultTab.Generate && password.isNotEmpty()) pendingGeneratedAddition = password
             return
@@ -729,7 +809,7 @@ internal class VaultViewModel(
      * @param kind 分类种类
      */
     fun manage(kind: CategoryKind) {
-        if (!current.busy && current.page == null) {
+        if (!current.busy && current.page == null && current.passwordMove == null) {
             mutableState.value = current.copy(
                 page = VaultPage.Categories(kind), selectedPasswordIds = emptySet(), problem = null,
             )
@@ -867,7 +947,7 @@ internal class VaultViewModel(
      * @param block 当前待执行操作
      */
     private fun performFromTabs(block: suspend () -> Unit) {
-        if (current.page == null) perform(block)
+        if (current.page == null && current.passwordMove == null) perform(block)
     }
 
     /**

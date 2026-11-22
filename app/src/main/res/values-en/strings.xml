@@ -178,6 +178,10 @@
     </plurals>
     <string name="vault_clear_password_selection">Exit selection</string>
     <string name="vault_delete_passwords">Delete selected passwords</string>
+    <string name="vault_move">Move</string>
+    <string name="vault_move_success">Passwords moved</string>
+    <string name="vault_move_passwords">Move to another vault</string>
+    <string name="vault_move_passwords_duplicate">Moving these passwords will create records with the same platform and account in the destination vault. Move anyway?</string>
     <plurals name="vault_passwords_selected">
         <item quantity="one">%d selected</item>
         <item quantity="other">%d selected</item>

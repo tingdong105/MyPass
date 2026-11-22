@@ -64,6 +64,7 @@ import com.winter.mypass.feature.home.model.VaultOrder
 import com.winter.mypass.feature.home.model.VaultProblem
 import com.winter.mypass.feature.home.model.VaultSnapshot
 import com.winter.mypass.feature.home.model.VaultSort
+import com.winter.mypass.feature.home.viewmodel.PasswordMove
 import com.winter.mypass.feature.home.viewmodel.VaultState
 import com.winter.mypass.feature.home.viewmodel.VaultTab
 import com.winter.mypass.ui.theme.AppThemeMode
@@ -72,6 +73,7 @@ import com.winter.mypass.ui.theme.Theme
 import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Checkbox
+import top.yukonga.miuix.kmp.basic.CircularProgressIndicator
 import top.yukonga.miuix.kmp.basic.DropdownDefaults
 import top.yukonga.miuix.kmp.basic.DropdownImpl
 import top.yukonga.miuix.kmp.basic.FloatingActionButton
@@ -363,6 +365,87 @@ internal fun CategoryPicker(
                 Text(
                     stringResource(R.string.vault_categories_empty),
                     Modifier.padding(Theme.spacing.medium), color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 保留移动弹窗的展示内容，直到退场动画完成。
+ * @author Tingdong
+ * @date 2026-11-23
+ */
+private data class PasswordMoveDialogContent(
+    val move: PasswordMove,
+    val books: List<VaultCategory>,
+    val busy: Boolean,
+    val problem: VaultProblem?,
+)
+
+/**
+ * 选择移动目标，并在发现重复项时确认保留全部记录。
+ * @param show 是否显示弹窗
+ * @param move 本次移动的固定选择与目标
+ * @param books 现有密码本
+ * @param busy 是否正在移动
+ * @param problem 移动失败原因
+ * @param onDismiss 取消移动
+ * @param onSelect 选择目标密码本并移动
+ * @param onConfirm 确认移动重复记录
+ */
+@Composable
+internal fun PasswordMoveDialog(
+    show: Boolean,
+    move: PasswordMove?,
+    books: List<VaultCategory>,
+    busy: Boolean,
+    problem: VaultProblem?,
+    onDismiss: () -> Unit,
+    onSelect: (Long) -> Unit,
+    onConfirm: () -> Unit,
+) {
+    var retainedContent by remember { mutableStateOf<PasswordMoveDialogContent?>(null) }
+    if (show && move != null) retainedContent = PasswordMoveDialogContent(move, books, busy, problem)
+    val content = retainedContent ?: return
+    val duplicate = content.move.targetBookId != null
+    val dismiss = { if (show && !content.busy) onDismiss() }
+    val maxContent = LocalConfiguration.current.screenHeightDp.dp * 0.5f
+    OverlayDialog(
+        show,
+        title = stringResource(if (duplicate) R.string.vault_duplicate_title else R.string.vault_move_passwords),
+        summary = if (duplicate) stringResource(R.string.vault_move_passwords_duplicate) else null,
+        onDismissRequest = dismiss,
+        onDismissFinished = { retainedContent = null },
+    ) {
+        // 移动及退场期间拦截返回手势。
+        BackHandler(enabled = !show || content.busy) { }
+        Column(verticalArrangement = Arrangement.spacedBy(Theme.spacing.small)) {
+            if (!duplicate) Column(
+                Modifier.fillMaxWidth().heightIn(max = maxContent).verticalScroll(rememberScrollState()),
+            ) {
+                for (book in content.books.filter { it.id != content.move.bookId }) BasicComponent(
+                    title = book.name,
+                    enabled = !content.busy,
+                    onClick = { if (show && !content.busy) onSelect(book.id) },
+                    startAction = { Icon(MiuixIcons.Folder, null, Modifier.size(VaultLayout.HomeHeaderIconSize)) },
+                )
+            }
+            VaultErrorText(content.problem)
+            if (content.busy) Box(
+                Modifier.fillMaxWidth().padding(Theme.spacing.small), contentAlignment = Alignment.Center,
+            ) {
+                CircularProgressIndicator()
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(Theme.spacing.small)) {
+                TextButton(
+                    stringResource(R.string.vault_cancel), onClick = dismiss,
+                    enabled = !content.busy, modifier = Modifier.weight(1f),
+                )
+                if (duplicate) TextButton(
+                    stringResource(R.string.vault_move), onClick = { if (show && !content.busy) onConfirm() },
+                    enabled = !content.busy, modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.textButtonColorsPrimary(),
                 )
             }
         }

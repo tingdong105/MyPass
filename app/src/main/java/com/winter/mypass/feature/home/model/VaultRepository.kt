@@ -230,6 +230,46 @@ internal class VaultRepository(context: Context, private val defaultBookName: St
         }
 
     /**
+     * 检查目标密码本与重复项，在同一事务中移动全部所选密码。
+     * @param ids 待移动的记录标识
+     * @param bookId 来源密码本
+     * @param targetBookId 目标密码本
+     * @param preview 列表密码预览设置
+     * @param allowDuplicate 是否已确认保留重复记录
+     * @return 来源密码本的最新列表快照
+     * @throws VaultException 密码本或记录失效，或移动会产生未经确认的重复记录
+     */
+    suspend fun movePasswords(
+        ids: Set<Long>,
+        bookId: Long,
+        targetBookId: Long,
+        preview: PasswordPreviewSettings,
+        allowDuplicate: Boolean,
+    ): VaultSnapshot = storage.transaction {
+        val dao = vaultDao()
+        val books = dao.books()
+        if (ids.isEmpty() || bookId == targetBookId ||
+            books.none { it.id == bookId } || books.none { it.id == targetBookId }
+        ) throw VaultException(VaultProblem.Missing)
+        val batches = ids.chunked(500)
+        val moving = batches.flatMap { dao.movingIdentities(bookId, it) }
+        if (moving.size != ids.size) throw VaultException(VaultProblem.Missing)
+        if (!allowDuplicate) {
+            val identities = dao.passwordIdentities(targetBookId).toCollection(sortedSetOf())
+            if (moving.any { !identities.add(PasswordIdentity(targetBookId, it.platform, it.account)) }) {
+                throw VaultException(VaultProblem.DuplicatePassword)
+            }
+        }
+        val updatedAt = System.currentTimeMillis()
+        for (batch in batches) {
+            if (dao.movePasswords(bookId, batch, targetBookId, updatedAt) != batch.size) {
+                throw VaultException(VaultProblem.Missing)
+            }
+        }
+        dao.snapshot(bookId, preview)
+    }
+
+    /**
      * 读取全部密码本的回收站记录。
      * @param bookId 当前密码本
      * @param preview 列表密码预览设置

@@ -306,6 +306,29 @@ internal interface VaultDao {
     suspend fun deletePasswords(bookId: Long, ids: List<Long>, deletedAt: Long)
 
     /**
+     * 读取当前本内待移动密码的查重字段。
+     * @param bookId 来源密码本
+     * @param ids 待移动的记录标识
+     * @return 未删除且属于来源密码本的记录身份
+     */
+    @Query("SELECT bookId, platform, account FROM vault_passwords WHERE bookId = :bookId AND id IN (:ids) AND deletedAt IS NULL")
+    suspend fun movingIdentities(bookId: Long, ids: List<Long>): List<PasswordIdentity>
+
+    /**
+     * 批量移动正常密码，保留记录和标签关联。
+     * @param bookId 来源密码本
+     * @param ids 待移动的记录标识
+     * @param targetBookId 目标密码本
+     * @param updatedAt 修改时间
+     * @return 实际移动的记录数
+     */
+    @Query("""
+        UPDATE vault_passwords SET bookId = :targetBookId, updatedAt = :updatedAt
+        WHERE bookId = :bookId AND id IN (:ids) AND deletedAt IS NULL
+    """)
+    suspend fun movePasswords(bookId: Long, ids: List<Long>, targetBookId: Long, updatedAt: Long): Int
+
+    /**
      * 读取全部密码本的回收站记录。
      */
     @Query("""

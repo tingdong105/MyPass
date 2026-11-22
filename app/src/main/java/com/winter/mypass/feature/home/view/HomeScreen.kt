@@ -3,6 +3,7 @@ package com.winter.mypass.feature.home.view
 import android.animation.ValueAnimator
 import android.os.Build
 import android.view.HapticFeedbackConstants
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -87,6 +88,7 @@ import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -122,6 +124,7 @@ import com.winter.mypass.feature.home.model.VaultSnapshot
 import com.winter.mypass.feature.home.model.VaultSort
 import com.winter.mypass.feature.home.viewmodel.DetailPhase
 import com.winter.mypass.feature.home.viewmodel.GeneratorOptions
+import com.winter.mypass.feature.home.viewmodel.PasswordMove
 import com.winter.mypass.feature.home.viewmodel.VaultPage
 import com.winter.mypass.feature.home.viewmodel.VaultState
 import com.winter.mypass.feature.home.viewmodel.VaultTab
@@ -152,6 +155,7 @@ import top.yukonga.miuix.kmp.icon.extended.Close
 import top.yukonga.miuix.kmp.icon.extended.Delete
 import top.yukonga.miuix.kmp.icon.extended.Folder
 import top.yukonga.miuix.kmp.icon.extended.FolderFill
+import top.yukonga.miuix.kmp.icon.extended.MoveFile
 import top.yukonga.miuix.kmp.icon.extended.Search
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
@@ -183,9 +187,16 @@ private val VaultState.destination: Destination
 @Composable
 internal fun VaultScreen(model: VaultViewModel, onBackup: () -> Unit, onChangeCredential: () -> Unit, onAbout: () -> Unit) {
     val state by model.state.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    LaunchedEffect(model, state.passwordMoveSucceeded) {
+        if (state.passwordMoveSucceeded) {
+            Toast.makeText(context, R.string.vault_move_success, Toast.LENGTH_SHORT).show()
+            model.consumePasswordMoveSuccess()
+        }
+    }
     val list = remember { LazyListState() }
     val focus = LocalFocusManager.current
-    val modalOpen = state.page is VaultPage.Editor || state.detail != null
+    val modalOpen = state.page is VaultPage.Editor || state.detail != null || state.passwordMove != null
     LaunchedEffect(modalOpen) {
         if (modalOpen) focus.clearFocus(force = true)
     }
@@ -305,6 +316,10 @@ internal fun VaultScreen(model: VaultViewModel, onBackup: () -> Unit, onChangeCr
                         onToggleSelection = model::togglePasswordSelection,
                         onClearSelection = model::clearPasswordSelection,
                         onDeleteSelected = model::deleteSelectedPasswords,
+                        onOpenPasswordMove = model::openPasswordMove,
+                        onDismissPasswordMove = model::dismissPasswordMove,
+                        onMoveSelected = model::moveSelectedPasswords,
+                        onConfirmPasswordMove = model::confirmPasswordMove,
                     ) {
                         if (active && !outgoing) when (page) {
                             is VaultPage.Detail -> PasswordDetailSheet(
@@ -489,6 +504,10 @@ private fun VaultThemeLayers(
  * @param onToggleSelection 切换一条密码的选择状态
  * @param onClearSelection 退出多选
  * @param onDeleteSelected 删除已确认的所选密码
+ * @param onOpenPasswordMove 打开目标密码本选择框
+ * @param onDismissPasswordMove 取消本次移动
+ * @param onMoveSelected 移动到所选密码本
+ * @param onConfirmPasswordMove 确认移动重复记录
  * @param overlays 挂载到顶层 Scaffold 的浮层
  */
 @OptIn(ExperimentalLayoutApi::class)
@@ -524,6 +543,10 @@ private fun VaultTopLevel(
     onToggleSelection: (Long) -> Unit,
     onClearSelection: () -> Unit,
     onDeleteSelected: () -> Unit,
+    onOpenPasswordMove: () -> Unit,
+    onDismissPasswordMove: () -> Unit,
+    onMoveSelected: (Long) -> Unit,
+    onConfirmPasswordMove: () -> Unit,
     overlays: @Composable () -> Unit = {},
 ) {
     val selected = state.selectedPasswordIds
@@ -533,11 +556,12 @@ private fun VaultTopLevel(
     var filterPopupOpen by remember(state.tab) { mutableStateOf(false) }
     var settingsPopupOpen by remember(state.tab) { mutableStateOf(false) }
     val deleteConfirmationOpen = active && state.tab == VaultTab.Home && selecting && confirmingDelete
+    val moveDialogOpen = active && state.tab == VaultTab.Home && state.passwordMove != null
     val keyboard = WindowInsets.isImeVisible
     val floatingNavigation = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && state.navigation.floating
     val floating = !keyboard && floatingNavigation
     val backdrop = if (floating) rememberVaultNavigationBackdrop() else null
-    val modalOpen = state.page is VaultPage.Editor || state.page is VaultPage.Detail || deleteConfirmationOpen
+    val modalOpen = state.page is VaultPage.Editor || state.page is VaultPage.Detail || deleteConfirmationOpen || moveDialogOpen
     val background = if (modalOpen) Modifier.blockVaultBackgroundFocus() else Modifier
     BoxWithConstraints(Modifier.fillMaxSize()) {
         val docked = maxWidth >= VaultLayout.DockedSidebarBreakpoint
@@ -553,7 +577,11 @@ private fun VaultTopLevel(
             if (drawerVisible) workspace.drawerOpen = false else onTab(VaultTab.Home)
         }
         BackHandler(!outgoing && active && home && selecting && !drawerVisible && !popupOpen) {
-            if (deleteConfirmationOpen) confirmingDelete = false else onClearSelection()
+            when {
+                moveDialogOpen -> onDismissPasswordMove()
+                deleteConfirmationOpen -> confirmingDelete = false
+                else -> onClearSelection()
+            }
         }
         Scaffold(
             modifier = Modifier.fillMaxSize()
@@ -598,6 +626,16 @@ private fun VaultTopLevel(
                     VaultTab.Settings -> stringResource(R.string.vault_settings)
                 }
                 val homeActions: @Composable () -> Unit = {
+                    if (homePage && selecting) VaultIcon(
+                        image = MiuixIcons.MoveFile,
+                        label = R.string.vault_move,
+                        enabled = active && !outgoing && tab == state.tab && !state.busy && !modalOpen && snapshot.books.size > 1,
+                        iconSize = VaultLayout.HomeHeaderIconSize,
+                        onClick = {
+                            focus.clearFocus(force = true)
+                            onOpenPasswordMove()
+                        },
+                    )
                     if (homePage && !selecting) Row {
                         TypeFilterMenu(
                             types = snapshot.types,
@@ -674,7 +712,7 @@ private fun VaultTopLevel(
                     floatingActionButton = {
                         if (homePage && !keyboard && !drawerVisible) PasswordActionFab(
                             selecting = selecting,
-                            enabled = active && tab == state.tab && !state.busy && !deleteConfirmationOpen,
+                            enabled = active && tab == state.tab && !state.busy && !modalOpen,
                         ) {
                             if (selecting) {
                                 focus.clearFocus(force = true)
@@ -696,7 +734,7 @@ private fun VaultTopLevel(
                         VaultTab.Home -> Row(body) {
                             if (docked) {
                                 BookSidebar(
-                                    snapshot, state.busy, Modifier.width(VaultLayout.DockedSidebarWidth)
+                                    snapshot, state.busy || modalOpen, Modifier.width(VaultLayout.DockedSidebarWidth)
                                         .fillMaxHeight().padding(bottom = floatingClearance),
                                     workspace.books, onBook, { onManage(CategoryKind.Book) },
                                     onToggleTheme = themeToggle.takeIf { active && home && !keyboard && !modalOpen },
@@ -712,7 +750,7 @@ private fun VaultTopLevel(
                                 )
                                 PasswordList(
                                     state, snapshot, workspace.passwords, Modifier.fillMaxWidth().weight(1f),
-                                    active && home && !drawerVisible && !deleteConfirmationOpen,
+                                    active && home && !drawerVisible && !modalOpen,
                                     onQuery, onOpen, onToggleSelection, emptyPlayback, floatingClearance,
                                 )
                             }
@@ -752,6 +790,16 @@ private fun VaultTopLevel(
                     confirmingDelete = false
                     onDeleteSelected()
                 },
+            )
+            PasswordMoveDialog(
+                show = moveDialogOpen,
+                move = state.passwordMove,
+                books = snapshot.books,
+                busy = state.busy,
+                problem = state.problem,
+                onDismiss = onDismissPasswordMove,
+                onSelect = onMoveSelected,
+                onConfirm = onConfirmPasswordMove,
             )
         }
         if (!docked && home && !modalOpen) BookDrawer(
@@ -1212,6 +1260,7 @@ internal fun VaultTabbedPreview(state: VaultState, showDrawer: Boolean = false) 
                 onChangeCredential = {}, onBackup = {}, onAbout = {}, onTrash = {}, onClear = {}, onOpen = {}, onAdd = {}, onGeneratorOptions = {},
                 onRefreshGenerated = {}, onCopyGenerated = { _, _ -> }, onOpenGenerationHistory = {},
                 onToggleSelection = {}, onClearSelection = {}, onDeleteSelected = {},
+                onOpenPasswordMove = {}, onDismissPasswordMove = {}, onMoveSelected = {}, onConfirmPasswordMove = {},
             )
         }
     }
@@ -1236,12 +1285,22 @@ internal fun VaultBookSidebarPreview() {
 }
 
 /**
- * 预览首页多选卡片和删除按钮。
+ * 预览首页多选卡片、移动和删除按钮。
  */
 @VaultPreviews
 @Composable
 internal fun VaultHomeSelectionPreview() {
     VaultTabbedPreview(VaultState(selectedPasswordIds = setOf(1L, 3L)))
+}
+
+/**
+ * 预览多选移动的目标密码本弹窗。
+ */
+@VaultPreviews
+@Composable
+internal fun VaultPasswordMovePreview() {
+    val ids = setOf(1L, 3L)
+    VaultTabbedPreview(VaultState(selectedPasswordIds = ids, passwordMove = PasswordMove(1, ids)))
 }
 
 /**
