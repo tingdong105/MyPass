@@ -3,6 +3,8 @@ import java.time.format.DateTimeFormatter
 import java.util.Properties
 
 plugins {
+    // 构建时收集直接和传递依赖的开源许可并生成离线资源
+    alias(libs.plugins.aboutlibraries)
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
     // KT序列化
@@ -85,6 +87,15 @@ android {
 room {
     // 版本化保存业务数据库结构，方便后续迁移使用
     schemaDirectory("$projectDir/schemas")
+}
+
+aboutLibraries {
+    // 使用随项目保存的许可全文，避免构建依赖 GitHub/SPDX 的实时请求
+    offlineMode = true
+    collect {
+        configPath = file("oss")
+        includePlatform = false
+    }
 }
 
 dependencies {

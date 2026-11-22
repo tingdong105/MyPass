@@ -89,6 +89,7 @@ import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.icon.extended.Copy
 import top.yukonga.miuix.kmp.icon.extended.Delete
 import top.yukonga.miuix.kmp.icon.extended.Folder
+import top.yukonga.miuix.kmp.icon.extended.Info
 import top.yukonga.miuix.kmp.icon.extended.Layers
 import top.yukonga.miuix.kmp.icon.extended.Lock
 import top.yukonga.miuix.kmp.icon.extended.More
@@ -495,6 +496,7 @@ private fun CategoryRow(
  * @param themeMode 当前选择的主题模式
  * @param onTheme 选择主题模式，null 表示暂不可切换
  * @param onPopupVisibility 通知顶层是否正在显示设置弹层
+ * @param onAbout 打开关于软件页
  */
 @Composable
 internal fun VaultSettings(
@@ -513,6 +515,7 @@ internal fun VaultSettings(
     themeMode: AppThemeMode,
     onTheme: ((AppThemeMode) -> Unit)?,
     onPopupVisibility: (Boolean) -> Unit,
+    onAbout: () -> Unit,
 ) {
     var choosingTheme by remember { mutableStateOf(false) }
     var choosingSymbol by remember { mutableStateOf(false) }
@@ -601,6 +604,9 @@ internal fun VaultSettings(
         VaultLink(stringResource(R.string.vault_manage_types), enabled = !busy, icon = MiuixIcons.Layers) {
             onManage(CategoryKind.Type)
         }
+    }
+    VaultGroup {
+        VaultLink(stringResource(R.string.about_title), icon = MiuixIcons.Info, onClick = onAbout)
     }
     OverlayDialog(choosingSymbol, title = symbolTitle, onDismissRequest = { choosingSymbol = false }) {
         Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {

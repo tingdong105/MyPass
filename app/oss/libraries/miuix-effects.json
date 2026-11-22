@@ -1,0 +1,14 @@
+{
+  "uniqueId": "source:miuix-effects",
+  "name": "Miuix background and liquid glass effects",
+  "artifactVersion": "caccb787",
+  "website": "https://github.com/compose-miuix-ui/miuix",
+  "developers": [
+    {
+      "name": "compose-miuix-ui contributors"
+    }
+  ],
+  "licenses": [
+    "MyPass-Miuix-Apache"
+  ]
+}

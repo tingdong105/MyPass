@@ -1,0 +1,47 @@
+{
+  "repository": "https://github.com/wxxsfxyzm/InstallerX-Revived",
+  "commit": "caccb787c1a4189da3f917eb990fb949305e3899",
+  "files": [
+    {
+      "path": "app/src/main/java/com/rosan/installer/ui/library/effect/BgEffectBackground.kt",
+      "gitBlobSha": "ddc75c1330efb138416d6f70433c35e215e9e527"
+    },
+    {
+      "path": "app/src/main/java/com/rosan/installer/ui/library/effect/BgEffectConfig.kt",
+      "gitBlobSha": "5bd87eb6648f63205b95e9c6fd11ac8c9dfee0fe"
+    },
+    {
+      "path": "app/src/main/java/com/rosan/installer/ui/library/effect/BgEffectModifier.kt",
+      "gitBlobSha": "6228f101993c7f9499a192eb7cc4346d6fd0782f"
+    },
+    {
+      "path": "app/src/main/java/com/rosan/installer/ui/library/effect/BgEffectPainter.kt",
+      "gitBlobSha": "8db74733fa37083af67348e86830224344860d77"
+    },
+    {
+      "path": "app/src/main/java/com/rosan/installer/ui/library/effect/DeviceType.kt",
+      "gitBlobSha": "e8fd8c6eb64a1b77529faada8e85b96aa6f79196"
+    },
+    {
+      "path": "app/src/main/java/com/rosan/installer/ui/library/effect/OS2BgFrag.kt",
+      "gitBlobSha": "176f287f2ff41d192b9ee44ae1cbcd7d7e1c1804"
+    },
+    {
+      "path": "app/src/main/java/com/rosan/installer/ui/library/effect/OS3BgFrag.kt",
+      "gitBlobSha": "c76170d97693cab3a45af46e75991bc3a5c32d41"
+    },
+    {
+      "path": "app/src/main/java/com/rosan/installer/ui/page/miuix/settings/preferred/about/MiuixAboutPage.kt",
+      "gitBlobSha": "b7cbe26c8427dee571e4939173087926533bfeb9"
+    }
+  ],
+  "adaptations": [
+    "BgEffectPainter uses the existing Miuix 0.9.4 blur package.",
+    "BgEffectBackground uses MyPass window size, theme and lifecycle.",
+    "AboutScreen adapts the upstream layout, foreground/card blends and scroll fades to MyPass branding and navigation."
+  ],
+  "licenses": {
+    "effect": "Apache-2.0",
+    "about": "GPL-3.0-only"
+  }
+}

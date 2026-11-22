@@ -289,4 +289,17 @@
     <string name="backup_tls_host">HTTPS handshake failed with %1$s.</string>
     <string name="backup_export_location_default">Default</string>
     <string name="backup_cos_bucket_mismatch">Could not verify the bucket. Check the custom domain and full bucket name.</string>
+    <string name="about_title">About</string>
+    <string name="about_version">%1$s (%2$d)</string>
+    <string name="about_github">GitHub</string>
+    <string name="about_licenses">Open source licenses</string>
+    <string name="about_no_browser">No browser available</string>
+    <string name="about_license_loading">Loading open source licenses</string>
+    <string name="about_license_error">Could not load open source licenses</string>
+    <string name="about_license_missing">This dependency could not be found</string>
+    <string name="about_license_empty">No open source dependencies</string>
+    <string name="about_license_website">Project website</string>
+    <string name="about_license_unknown">License information not provided</string>
+    <string name="about_license_text_unavailable">The full license text is not bundled. Please open the original license.</string>
+    <string name="about_license_original">View original license</string>
 </resources>

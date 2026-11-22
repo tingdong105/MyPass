@@ -30,4 +30,14 @@ sealed interface AppRoute : NavKey {
     @Serializable
     @SerialName("change_credential")
     data object ChangeCredential : AppRoute
+
+    /** 关于软件。 */
+    @Serializable
+    @SerialName("about")
+    data object About : AppRoute
+
+    /** 开源依赖清单及单项许可。 */
+    @Serializable
+    @SerialName("open_source_licenses")
+    data class OpenSourceLicenses(val libraryId: String? = null) : AppRoute
 }

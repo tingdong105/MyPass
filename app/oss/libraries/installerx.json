@@ -1,0 +1,14 @@
+{
+  "uniqueId": "source:installerx",
+  "name": "InstallerX Revived",
+  "artifactVersion": "26.09 / caccb787",
+  "website": "https://github.com/wxxsfxyzm/InstallerX-Revived",
+  "developers": [
+    {
+      "name": "InstallerX Revived contributors"
+    }
+  ],
+  "licenses": [
+    "MyPass-InstallerX-GPL"
+  ]
+}

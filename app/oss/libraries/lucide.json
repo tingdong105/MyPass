@@ -1,0 +1,14 @@
+{
+  "uniqueId": "source:lucide",
+  "name": "Lucide Icons",
+  "artifactVersion": "",
+  "website": "https://github.com/lucide-icons/lucide",
+  "developers": [
+    {
+      "name": "Lucide Icons and Contributors"
+    }
+  ],
+  "licenses": [
+    "MyPass-Lucide-ISC"
+  ]
+}

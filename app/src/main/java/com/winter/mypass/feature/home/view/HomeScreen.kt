@@ -178,9 +178,10 @@ private val VaultState.destination: Destination
  * 连接解锁后各屏的状态、返回和页面转场。
  * @param model 当前解锁会话的密码本
  * @param onChangeCredential 打开启动密码修改页
+ * @param onAbout 打开关于软件页
  */
 @Composable
-internal fun VaultScreen(model: VaultViewModel, onBackup: () -> Unit, onChangeCredential: () -> Unit) {
+internal fun VaultScreen(model: VaultViewModel, onBackup: () -> Unit, onChangeCredential: () -> Unit, onAbout: () -> Unit) {
     val state by model.state.collectAsStateWithLifecycle()
     val list = remember { LazyListState() }
     val focus = LocalFocusManager.current
@@ -290,6 +291,7 @@ internal fun VaultScreen(model: VaultViewModel, onBackup: () -> Unit, onChangeCr
                         onClipboardClearTimeout = model::setClipboardClearTimeout,
                         onChangeCredential = onChangeCredential,
                         onBackup = onBackup,
+                        onAbout = onAbout,
                         onTrash = model::openTrash,
                         onClear = model::clearProblem,
                         onOpen = model::openDetail,
@@ -471,6 +473,7 @@ private fun VaultThemeLayers(
  * @param onClipboardClearTimeout 修改剪贴板清除时限
  * @param onChangeCredential 打开启动密码修改页
  * @param onBackup 打开备份页
+ * @param onAbout 打开关于软件页
  * @param onTrash 打开回收站
  * @param onClear 清除错误反馈
  * @param onOpen 查看一条记录
@@ -504,6 +507,7 @@ private fun VaultTopLevel(
     onClipboardClearTimeout: (ClipboardClearTimeout) -> Unit,
     onChangeCredential: () -> Unit,
     onBackup: () -> Unit,
+    onAbout: () -> Unit,
     onTrash: () -> Unit,
     onClear: () -> Unit,
     onOpen: (Long) -> Unit,
@@ -710,6 +714,7 @@ private fun VaultTopLevel(
                                 themeMode = LocalAppTheme.current?.mode ?: AppThemeMode.System,
                                 onTheme = LocalAppTheme.current?.takeIf { it.ready && it.reveal == null }?.let { it::select },
                                 onPopupVisibility = { settingsPopupOpen = it },
+                                onAbout = onAbout,
                             )
                         }
                     }
@@ -1183,7 +1188,7 @@ internal fun VaultTabbedPreview(state: VaultState, showDrawer: Boolean = false) 
                 onTab = {}, onBook = {}, onManage = {}, onQuery = {}, onSort = {}, onPasswordPreview = {},
                 onNavigationSettings = {},
                 onClipboardClearTimeout = {},
-                onChangeCredential = {}, onBackup = {}, onTrash = {}, onClear = {}, onOpen = {}, onAdd = {}, onGeneratorOptions = {},
+                onChangeCredential = {}, onBackup = {}, onAbout = {}, onTrash = {}, onClear = {}, onOpen = {}, onAdd = {}, onGeneratorOptions = {},
                 onRefreshGenerated = {}, onCopyGenerated = { _, _ -> }, onOpenGenerationHistory = {},
                 onToggleSelection = {}, onClearSelection = {}, onDeleteSelected = {},
             )
