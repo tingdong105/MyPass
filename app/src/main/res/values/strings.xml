@@ -3,7 +3,7 @@
     <string name="lock_setup_title">设置应用密码</string>
     <string name="lock_choose_hint">选择一种方式，保护你的密码本。</string>
     <string name="lock_confirm_title">再次输入应用密码</string>
-    <string name="lock_change_title">修改启动密码</string>
+    <string name="lock_change_title">修改主密码</string>
     <string name="lock_change_current">输入当前密码</string>
     <string name="lock_change_type">选择解锁方式</string>
     <string name="lock_change_new">设置新密码</string>
@@ -50,8 +50,8 @@
     <string name="vault_tags">标签</string>
     <string name="vault_type">类型</string>
     <string name="vault_types">类型</string>
-    <string name="vault_manage_tags">管理标签</string>
-    <string name="vault_manage_types">管理类型</string>
+    <string name="vault_manage_tags">标签管理</string>
+    <string name="vault_manage_types">类型管理</string>
     <string name="vault_new_category">新建</string>
     <string name="vault_category_name">名称</string>
     <string name="vault_categories_empty">暂无分类</string>
@@ -170,8 +170,8 @@
     <string name="backup_config">云端配置</string>
     <string name="backup_local">本地文件</string>
     <string name="backup_cloud">云备份</string>
-    <string name="backup_export">导出备份文件</string>
-    <string name="backup_import">从文件还原</string>
+    <string name="backup_export">导出备份</string>
+    <string name="backup_import">还原备份</string>
     <string name="backup_provider">存储服务</string>
     <string name="backup_webdav">WebDAV</string>
     <string name="backup_aws">AWS S3</string>
