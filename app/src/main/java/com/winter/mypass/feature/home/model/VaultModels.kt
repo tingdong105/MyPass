@@ -240,15 +240,17 @@ internal data class VaultSnapshot(
     }
 
     /**
-     * 按当前本的关键词和排序偏好生成列表。
+     * 按当前本的类型、关键词和排序偏好生成列表。
      * @param query 搜索词
      * @param sort 排序偏好
      * @param locale 名称排序的当前语言
+     * @param typeId 筛选的类型标识，空值表示全部类型
      * @return 过滤及排序后的摘要
      */
-    fun visiblePasswords(query: String, sort: VaultSort, locale: Locale): List<PasswordSummary> {
+    fun visiblePasswords(query: String, sort: VaultSort, locale: Locale, typeId: Long? = null): List<PasswordSummary> {
         val terms = query.trim().split(SearchSeparator).filter(String::isNotEmpty)
-        val filtered = if (terms.isEmpty()) passwords else passwords.filter { entry ->
+        val typed = if (typeId == null) passwords else passwords.filter { it.typeId == typeId }
+        val filtered = if (terms.isEmpty()) typed else typed.filter { entry ->
             val fields = listOfNotNull(entry.platform, entry.account, entry.website, typeName(entry.typeId)) +
                 tagsByPassword[entry.id].orEmpty().map(VaultCategory::name)
             terms.all { term -> fields.any { field -> field.contains(term, ignoreCase = true) } }

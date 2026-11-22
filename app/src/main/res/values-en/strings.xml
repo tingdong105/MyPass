@@ -75,6 +75,8 @@
     <string name="vault_no_results">No matching passwords</string>
     <string name="vault_empty">Nothing here yet~</string>
     <string name="vault_sort">Sort</string>
+    <string name="vault_filter_type">Filter password types</string>
+    <string name="vault_all_types">All types</string>
     <string name="vault_sort_updated">Date updated</string>
     <string name="vault_sort_created">Date created</string>
     <string name="vault_sort_name">Platform name</string>

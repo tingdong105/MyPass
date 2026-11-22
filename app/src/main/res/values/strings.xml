@@ -74,6 +74,8 @@
     <string name="vault_no_results">没有匹配的密码</string>
     <string name="vault_empty">空空如也~</string>
     <string name="vault_sort">排序</string>
+    <string name="vault_filter_type">筛选密码类型</string>
+    <string name="vault_all_types">全部类型</string>
     <string name="vault_sort_updated">按更新时间</string>
     <string name="vault_sort_created">按创建时间</string>
     <string name="vault_sort_name">按平台名称</string>

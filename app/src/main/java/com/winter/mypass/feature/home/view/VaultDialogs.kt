@@ -44,7 +44,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -76,6 +78,7 @@ import top.yukonga.miuix.kmp.basic.FloatingActionButton
 import top.yukonga.miuix.kmp.basic.FloatingActionButtonDefaults
 import top.yukonga.miuix.kmp.basic.HorizontalDivider
 import top.yukonga.miuix.kmp.basic.Icon
+import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.ListPopupColumn
 import top.yukonga.miuix.kmp.basic.ListPopupDefaults
 import top.yukonga.miuix.kmp.basic.PopupPositionProvider
@@ -88,6 +91,7 @@ import top.yukonga.miuix.kmp.icon.extended.Add
 import top.yukonga.miuix.kmp.icon.extended.Back
 import top.yukonga.miuix.kmp.icon.extended.Copy
 import top.yukonga.miuix.kmp.icon.extended.Delete
+import top.yukonga.miuix.kmp.icon.extended.Filter
 import top.yukonga.miuix.kmp.icon.extended.Folder
 import top.yukonga.miuix.kmp.icon.extended.Info
 import top.yukonga.miuix.kmp.icon.extended.Layers
@@ -101,6 +105,93 @@ import top.yukonga.miuix.kmp.overlay.OverlayBottomSheet
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.overlay.OverlayListPopup
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+
+/**
+ * 在筛选图标下方选择密码类型，并高亮当前筛选状态。
+ * @param types 当前可用的类型
+ * @param typeId 当前类型标识，空值表示全部类型
+ * @param enabled 是否允许操作
+ * @param onSelect 选择类型后更新列表
+ * @param onOpen 展开菜单前的页面处理
+ * @param onDismiss 菜单关闭后的清理
+ */
+@Composable
+internal fun TypeFilterMenu(
+    types: List<VaultCategory>,
+    typeId: Long?,
+    enabled: Boolean,
+    onSelect: (Long?) -> Unit,
+    onOpen: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var show by remember { mutableStateOf(false) }
+    val close = {
+        show = false
+        onDismiss()
+    }
+    val allTypes = stringResource(R.string.vault_all_types)
+    val currentType = types.firstOrNull { it.id == typeId }?.name ?: allTypes
+    Box {
+        IconButton(
+            onClick = {
+                if (show) close() else {
+                    onOpen()
+                    show = true
+                }
+            },
+            enabled = enabled,
+            minWidth = Theme.sizes.minimumTouchTarget,
+            minHeight = Theme.sizes.minimumTouchTarget,
+            modifier = Modifier.semantics {
+                selected = typeId != null
+                stateDescription = currentType
+            },
+        ) {
+            Icon(
+                MiuixIcons.Filter, stringResource(R.string.vault_filter_type),
+                Modifier.size(VaultLayout.HomeHeaderIconSize),
+                tint = when {
+                    !enabled -> MiuixTheme.colorScheme.onSurfaceVariantSummary
+                    typeId != null -> MiuixTheme.colorScheme.primary
+                    else -> MiuixTheme.colorScheme.onSurface
+                },
+            )
+        }
+        OverlayListPopup(
+            show = show,
+            alignment = PopupPositionProvider.Align.End,
+            enableWindowDim = true,
+            minWidth = 0.dp,
+            onDismissRequest = close,
+        ) {
+            Column(
+                Modifier.widthIn(min = 160.dp, max = 280.dp).width(IntrinsicSize.Max)
+                    .verticalScroll(rememberScrollState()).selectableGroup()
+                    .padding(vertical = Theme.spacing.small / 2),
+            ) {
+                VaultPopupChoice(
+                    allTypes, !enabled,
+                    Modifier.selectable(typeId == null, enabled = enabled, role = Role.RadioButton) {
+                        close()
+                        onSelect(null)
+                    },
+                    selected = typeId == null,
+                )
+                if (types.isNotEmpty()) VaultRowDivider()
+                for (type in types) {
+                    VaultPopupChoice(
+                        type.name, !enabled,
+                        Modifier.selectable(type.id == typeId, enabled = enabled, role = Role.RadioButton) {
+                            close()
+                            onSelect(type.id)
+                        },
+                        selected = type.id == typeId,
+                    )
+                }
+            }
+        }
+    }
+}
 
 /**
  * 在排序图标下方展开菜单，选择排序方式后收起，切换逆序时保持展开。

@@ -192,7 +192,7 @@ internal fun VaultScreen(model: VaultViewModel, onBackup: () -> Unit, onChangeCr
     val sheetClosing = state.detail?.let { it.phase != DetailPhase.Open } == true ||
         (state.page as? VaultPage.Editor)?.phase?.isClosing == true
     BackHandler(enabled = sheetClosing) { }
-    LaunchedEffect(state.snapshot?.bookId, state.query, state.sort) {
+    LaunchedEffect(state.snapshot?.bookId, state.query, state.sort, state.typeFilterId) {
         if (state.snapshot != null) list.scrollToItem(0)
     }
     val forward = if (LocalLayoutDirection.current == LayoutDirection.Ltr) 1 else -1
@@ -286,6 +286,7 @@ internal fun VaultScreen(model: VaultViewModel, onBackup: () -> Unit, onChangeCr
                         onManage = model::manage,
                         onQuery = model::search,
                         onSort = model::sort,
+                        onFilterType = model::filterType,
                         onPasswordPreview = model::setPasswordPreview,
                         onNavigationSettings = model::setNavigationSettings,
                         onClipboardClearTimeout = model::setClipboardClearTimeout,
@@ -468,6 +469,7 @@ private fun VaultThemeLayers(
  * @param onManage 打开分类管理
  * @param onQuery 修改搜索词
  * @param onSort 修改排序
+ * @param onFilterType 修改密码类型筛选
  * @param onPasswordPreview 修改密码预览设置
  * @param onNavigationSettings 修改底栏样式偏好
  * @param onClipboardClearTimeout 修改剪贴板清除时限
@@ -502,6 +504,7 @@ private fun VaultTopLevel(
     onManage: (CategoryKind) -> Unit,
     onQuery: (String) -> Unit,
     onSort: (VaultSort) -> Unit,
+    onFilterType: (Long?) -> Unit,
     onPasswordPreview: (PasswordPreviewSettings) -> Unit,
     onNavigationSettings: ((VaultNavigationSettings) -> VaultNavigationSettings) -> Unit,
     onClipboardClearTimeout: (ClipboardClearTimeout) -> Unit,
@@ -525,6 +528,7 @@ private fun VaultTopLevel(
     val selecting = selected.isNotEmpty()
     var confirmingDelete by remember(snapshot.bookId, state.tab, state.query, selecting, active) { mutableStateOf(false) }
     var sortPopupOpen by remember(state.tab) { mutableStateOf(false) }
+    var filterPopupOpen by remember(state.tab) { mutableStateOf(false) }
     var settingsPopupOpen by remember(state.tab) { mutableStateOf(false) }
     val deleteConfirmationOpen = active && state.tab == VaultTab.Home && selecting && confirmingDelete
     val keyboard = WindowInsets.isImeVisible
@@ -537,7 +541,7 @@ private fun VaultTopLevel(
         val docked = maxWidth >= VaultLayout.DockedSidebarBreakpoint
         val home = state.tab == VaultTab.Home
         val drawerVisible = workspace.drawerOpen && home && !docked
-        val popupOpen = sortPopupOpen || settingsPopupOpen
+        val popupOpen = sortPopupOpen || filterPopupOpen || settingsPopupOpen
         val navigationEnabled = active && !outgoing && !modalOpen && !drawerVisible && !state.busy &&
             !popupOpen
         val pageSwipes = floating && navigationEnabled
@@ -591,19 +595,33 @@ private fun VaultTopLevel(
                     VaultTab.Generate -> stringResource(R.string.vault_generator_title)
                     VaultTab.Settings -> stringResource(R.string.vault_settings)
                 }
-                val sortAction: @Composable () -> Unit = {
-                    if (homePage && !selecting) SortMenu(
-                        state.sort, state.busy, state.problem, onSort,
-                        onOpen = {
-                            sortPopupOpen = true
-                            focus.clearFocus()
-                            onClear()
-                        },
-                        onDismiss = {
-                            sortPopupOpen = false
-                            onClear()
-                        },
-                    )
+                val homeActions: @Composable () -> Unit = {
+                    if (homePage && !selecting) Row {
+                        TypeFilterMenu(
+                            types = snapshot.types,
+                            typeId = state.typeFilterId,
+                            enabled = active && tab == state.tab && !state.busy,
+                            onSelect = onFilterType,
+                            onOpen = {
+                                filterPopupOpen = true
+                                focus.clearFocus()
+                                onClear()
+                            },
+                            onDismiss = { filterPopupOpen = false },
+                        )
+                        SortMenu(
+                            state.sort, state.busy, state.problem, onSort,
+                            onOpen = {
+                                sortPopupOpen = true
+                                focus.clearFocus()
+                                onClear()
+                            },
+                            onDismiss = {
+                                sortPopupOpen = false
+                                onClear()
+                            },
+                        )
+                    }
                 }
                 Scaffold(
                     modifier = Modifier.fillMaxSize()
@@ -640,7 +658,7 @@ private fun VaultTopLevel(
                                             }
                                         } else null,
                                         onClearSelection = if (selecting && homePage) onClearSelection else null,
-                                        actions = sortAction,
+                                        actions = homeActions,
                                     )
                                 }
                             }
@@ -688,7 +706,7 @@ private fun VaultTopLevel(
                                     title = heading, includeWindowInsets = false,
                                     modifier = Modifier.widthIn(max = VaultLayout.PaneWidth).fillMaxWidth(),
                                     onClearSelection = if (selecting) onClearSelection else null,
-                                    actions = sortAction,
+                                    actions = homeActions,
                                 )
                                 PasswordList(
                                     state, snapshot, workspace.passwords, Modifier.fillMaxWidth().weight(1f),
@@ -912,8 +930,8 @@ private fun PasswordList(
     val focus = LocalFocusManager.current
     val locale = LocalConfiguration.current.locales[0]
     val keyboard = WindowInsets.isImeVisible
-    val entries = remember(snapshot, state.query, state.sort, locale) {
-        snapshot.visiblePasswords(state.query, state.sort, locale)
+    val entries = remember(snapshot, state.query, state.sort, state.typeFilterId, locale) {
+        snapshot.visiblePasswords(state.query, state.sort, locale, state.typeFilterId)
     }
     Box(modifier, contentAlignment = Alignment.TopCenter) {
         Column(
@@ -949,7 +967,7 @@ private fun PasswordList(
                 if (entries.isEmpty()) {
                     item(key = "empty") {
                         Box(Modifier.fillParentMaxSize(), contentAlignment = Alignment.Center) {
-                            if (state.query.isBlank()) {
+                            if (state.query.isBlank() && state.typeFilterId == null) {
                                 VaultEmptyState(playback = emptyPlayback)
                             } else {
                                 Column(
@@ -1186,6 +1204,7 @@ internal fun VaultTabbedPreview(state: VaultState, showDrawer: Boolean = false) 
                 state = state.copy(snapshot = snapshot), snapshot = snapshot, active = true,
                 workspace = workspace, themeToggle = themeToggle, emptyPlayback = emptyPlayback, outgoing = outgoing,
                 onTab = {}, onBook = {}, onManage = {}, onQuery = {}, onSort = {}, onPasswordPreview = {},
+                onFilterType = {},
                 onNavigationSettings = {},
                 onClipboardClearTimeout = {},
                 onChangeCredential = {}, onBackup = {}, onAbout = {}, onTrash = {}, onClear = {}, onOpen = {}, onAdd = {}, onGeneratorOptions = {},

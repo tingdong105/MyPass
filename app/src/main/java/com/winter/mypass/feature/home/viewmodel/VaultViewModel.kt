@@ -160,6 +160,7 @@ internal data class VaultState(
     val navigation: VaultNavigationSettings = VaultNavigationSettings(),
     val clipboardClearTimeout: ClipboardClearTimeout = ClipboardClearTimeout.Seconds30,
     val query: String = "",
+    val typeFilterId: Long? = null,
     val selectedPasswordIds: Set<Long> = emptySet(),
     val tab: VaultTab = VaultTab.Home,
     val page: VaultPage? = null,
@@ -267,6 +268,16 @@ internal class VaultViewModel(
     fun search(query: String) {
         if (current.busy || current.page != null || query == current.query) return
         mutableState.value = current.copy(query = query, selectedPasswordIds = emptySet())
+    }
+
+    /**
+     * 切换当前本的类型筛选并退出多选。
+     * @param typeId 类型标识，空值表示全部类型
+     */
+    fun filterType(typeId: Long?) {
+        if (current.busy || current.page != null || current.tab != VaultTab.Home || current.typeFilterId == typeId) return
+        if (typeId != null && current.snapshot?.types?.none { it.id == typeId } != false) return
+        mutableState.value = current.copy(typeFilterId = typeId, selectedPasswordIds = emptySet(), problem = null)
     }
 
     /**
@@ -752,7 +763,10 @@ internal class VaultViewModel(
         perform {
             val snapshot = repository.deleteCategory(kind, id, book, current.passwordPreview)
             if (book != snapshot.bookId) rememberBook(snapshot.bookId)
-            mutableState.value = current.copy(snapshot = snapshot)
+            mutableState.value = current.copy(
+                snapshot = snapshot,
+                typeFilterId = current.typeFilterId.takeIf { selected -> snapshot.types.any { it.id == selected } },
+            )
         }
     }
 
