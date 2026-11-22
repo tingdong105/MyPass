@@ -54,13 +54,22 @@ private const val ThemeRevealDurationMillis = 450
 private val ThemeRevealEasing = CubicBezierEasing(0.42f, 0f, 0.58f, 1f)
 
 /**
- * 管理手动主题偏好与切换请求。
+ * 应用主题模式与持久化标识。
+ * @author Tingdong
+ * @date 2026-11-22
+ */
+internal enum class AppThemeMode(val dark: Boolean?, val storageValue: String) {
+    System(null, "system"), Light(false, "light"), Dark(true, "dark");
+}
+
+/**
+ * 管理主题偏好与切换请求。
  * @author Tingdong
  * @date 2026-11-22
  */
 internal class AppThemeViewModel : ViewModel() {
     private val storeDispatcher = Dispatchers.IO.limitedParallelism(1)
-    var darkOverride by mutableStateOf<Boolean?>(null)
+    var mode by mutableStateOf(AppThemeMode.System)
         private set
     var ready by mutableStateOf(false)
         private set
@@ -70,12 +79,9 @@ internal class AppThemeViewModel : ViewModel() {
     init {
         viewModelScope.launch {
             try {
-                darkOverride = withContext(storeDispatcher) {
-                    when (MMKVUtils.getString(ThemePreferenceKey)) {
-                        "dark" -> true
-                        "light" -> false
-                        else -> null
-                    }
+                mode = withContext(storeDispatcher) {
+                    val stored = MMKVUtils.getString(ThemePreferenceKey)
+                    AppThemeMode.entries.firstOrNull { it.storageValue == stored } ?: AppThemeMode.System
                 }
             } catch (error: CancellationException) {
                 throw error
@@ -93,12 +99,29 @@ internal class AppThemeViewModel : ViewModel() {
      * @param animate 是否播放圆形过渡
      */
     fun toggle(dark: Boolean, center: Offset, animate: Boolean) {
-        if (!ready || reveal != null || darkOverride == !dark) return
+        if (!ready || reveal != null || mode.dark == !dark) return
         if (animate) reveal = ThemeReveal(dark, center)
-        darkOverride = !dark
+        saveTheme(if (dark) AppThemeMode.Light else AppThemeMode.Dark)
+    }
+
+    /**
+     * 从设置页选择跟随系统或固定明暗主题。
+     * @param selected 用户选择的主题模式
+     */
+    fun select(selected: AppThemeMode) {
+        if (!ready || reveal != null || mode == selected) return
+        saveTheme(selected)
+    }
+
+    /**
+     * 应用主题并按顺序保存到本地。
+     * @param selected 用户选择的主题模式
+     */
+    private fun saveTheme(selected: AppThemeMode) {
+        mode = selected
         viewModelScope.launch(storeDispatcher) {
             try {
-                if (!MMKVUtils.putString(ThemePreferenceKey, if (dark) "light" else "dark")) {
+                if (!MMKVUtils.putString(ThemePreferenceKey, selected.storageValue)) {
                     Log.w("AppTheme", "Could not save theme preference")
                 }
             } catch (error: Exception) {
@@ -165,7 +188,7 @@ internal fun AppThemeHost(window: Window, content: @Composable () -> Unit) {
     }
     if (!theme.ready) return
 
-    val dark = theme.darkOverride ?: isSystemInDarkTheme()
+    val dark = theme.mode.dark ?: isSystemInDarkTheme()
     val reveal = theme.reveal
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     var size by remember { mutableStateOf(IntSize.Zero) }

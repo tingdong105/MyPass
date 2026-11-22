@@ -63,6 +63,7 @@ import com.winter.mypass.feature.home.model.VaultSnapshot
 import com.winter.mypass.feature.home.model.VaultSort
 import com.winter.mypass.feature.home.viewmodel.VaultState
 import com.winter.mypass.feature.home.viewmodel.VaultTab
+import com.winter.mypass.ui.theme.AppThemeMode
 import com.winter.mypass.ui.theme.MyPassTheme
 import com.winter.mypass.ui.theme.Theme
 import top.yukonga.miuix.kmp.basic.BasicComponent
@@ -486,6 +487,9 @@ private fun CategoryRow(
  * @param onBackup 打开备份页
  * @param onTrash 打开回收站
  * @param onManage 打开对应分类
+ * @param dark 当前是否使用暗色主题
+ * @param themeMode 当前选择的主题模式
+ * @param onTheme 选择主题模式，null 表示暂不可切换
  * @param onPopupVisibility 通知顶层是否正在显示设置弹层
  */
 @Composable
@@ -499,14 +503,18 @@ internal fun VaultSettings(
     onBackup: () -> Unit,
     onTrash: () -> Unit,
     onManage: (CategoryKind) -> Unit,
+    dark: Boolean,
+    themeMode: AppThemeMode,
+    onTheme: ((AppThemeMode) -> Unit)?,
     onPopupVisibility: (Boolean) -> Unit,
 ) {
+    var choosingTheme by remember { mutableStateOf(false) }
     var choosingSymbol by remember { mutableStateOf(false) }
     var choosingVisibility by remember { mutableStateOf(false) }
     var customSymbol by remember { mutableStateOf<String?>(null) }
     val symbolTitle = stringResource(R.string.vault_mask_symbol)
     val popupVisibility by rememberUpdatedState(onPopupVisibility)
-    val popupOpen = choosingSymbol || choosingVisibility
+    val popupOpen = choosingSymbol || choosingVisibility || choosingTheme
     DisposableEffect(popupOpen) {
         popupVisibility(popupOpen)
         onDispose { if (popupOpen) popupVisibility(false) }
@@ -534,6 +542,10 @@ internal fun VaultSettings(
         )
     }
     SettingsSection(R.string.vault_style_settings) {
+        ThemeMenu(themeMode, dark, !busy && onTheme != null, choosingTheme, { choosingTheme = it }) {
+            onTheme?.invoke(it)
+        }
+        VaultRowDivider()
         PasswordVisibilityMenu(
             preview.visibility, busy, choosingVisibility, { choosingVisibility = it },
         ) { onPasswordPreview(preview.copy(visibility = it)) }
@@ -647,6 +659,59 @@ internal fun SettingsSection(@StringRes title: Int, content: @Composable ColumnS
         VaultGroup(content = content)
     }
 }
+
+/**
+ * 在主题设置行展开 Miuix 单选下拉菜单。
+ * @param mode 当前主题模式
+ * @param dark 当前界面是否为暗色
+ * @param enabled 是否可以选择
+ * @param show 是否展开菜单
+ * @param onShow 修改菜单展开状态
+ * @param onSelect 应用所选主题模式
+ */
+@Composable
+private fun ThemeMenu(
+    mode: AppThemeMode,
+    dark: Boolean,
+    enabled: Boolean,
+    show: Boolean,
+    onShow: (Boolean) -> Unit,
+    onSelect: (AppThemeMode) -> Unit,
+) {
+    Box {
+        VaultLink(
+            stringResource(R.string.appearance_theme), enabled = enabled,
+            icon = ImageVector.vectorResource(if (dark) R.drawable.ic_vault_theme_moon else R.drawable.ic_vault_theme_sun),
+            value = stringResource(mode.label), onClick = { onShow(true) },
+        )
+        OverlayListPopup(
+            show = show, alignment = PopupPositionProvider.Align.End,
+            enableWindowDim = true, onDismissRequest = { onShow(false) },
+        ) {
+            ListPopupColumn {
+                AppThemeMode.entries.forEachIndexed { index, option ->
+                    DropdownImpl(
+                        text = stringResource(option.label), optionSize = AppThemeMode.entries.size,
+                        isSelected = mode == option, index = index, enabled = enabled,
+                        onSelectedIndexChange = {
+                            onShow(false)
+                            if (mode != option) onSelect(option)
+                        },
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** 主题模式对应的本地化名称。 */
+@get:StringRes
+private val AppThemeMode.label: Int
+    get() = when (this) {
+        AppThemeMode.System -> R.string.appearance_follow_system
+        AppThemeMode.Light -> R.string.appearance_light
+        AppThemeMode.Dark -> R.string.appearance_dark
+    }
 
 /**
  * 在密码显示设置行的右侧展开单选菜单。

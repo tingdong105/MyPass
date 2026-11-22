@@ -125,6 +125,7 @@ import com.winter.mypass.feature.home.viewmodel.VaultPage
 import com.winter.mypass.feature.home.viewmodel.VaultState
 import com.winter.mypass.feature.home.viewmodel.VaultTab
 import com.winter.mypass.feature.home.viewmodel.VaultViewModel
+import com.winter.mypass.ui.theme.AppThemeMode
 import com.winter.mypass.ui.theme.LocalAppTheme
 import com.winter.mypass.ui.theme.LocalDarkTheme
 import com.winter.mypass.ui.theme.MyPassTheme
@@ -700,6 +701,9 @@ private fun VaultTopLevel(
                             VaultSettings(
                                 state.passwordPreview, state.navigation, state.busy, onPasswordPreview,
                                 onNavigationSettings, onChangeCredential, onBackup, onTrash, onManage,
+                                dark = LocalDarkTheme.current,
+                                themeMode = LocalAppTheme.current?.mode ?: AppThemeMode.System,
+                                onTheme = LocalAppTheme.current?.takeIf { it.ready && it.reveal == null }?.let { it::select },
                                 onPopupVisibility = { settingsPopupOpen = it },
                             )
                         }
