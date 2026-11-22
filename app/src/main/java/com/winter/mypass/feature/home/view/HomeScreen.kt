@@ -242,6 +242,7 @@ internal fun VaultScreen(model: VaultViewModel, onBackup: () -> Unit, onChangeCr
                         PasswordDetailSheet(
                             detail = detail,
                             snapshot = snapshot,
+                            preview = screen.passwordPreview,
                             busy = screen.busy || confirmingRestore,
                             problem = screen.problem,
                             onDismiss = model::dismissPasswordDetail,
@@ -309,6 +310,7 @@ internal fun VaultScreen(model: VaultViewModel, onBackup: () -> Unit, onChangeCr
                             is VaultPage.Detail -> PasswordDetailSheet(
                                 detail = page,
                                 snapshot = snapshot,
+                                preview = screen.passwordPreview,
                                 busy = screen.busy,
                                 problem = screen.problem,
                                 onDismiss = model::dismissPasswordDetail,

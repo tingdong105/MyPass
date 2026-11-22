@@ -1,6 +1,8 @@
 package com.winter.mypass.feature.home.view
 
 import android.animation.ValueAnimator
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffColorFilter
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -55,8 +57,9 @@ internal fun VaultCopyIcon(
     val playback = rememberLottieAnimatable()
     val version by rememberUpdatedState(copyVersion)
     var staticConfirmation by remember { mutableStateOf(false) }
+    val tintFilter = remember(tint) { PorterDuffColorFilter(tint.toArgb(), PorterDuff.Mode.SRC_IN) }
     val ink = rememberLottieDynamicProperties(
-        rememberLottieDynamicProperty(LottieProperty.STROKE_COLOR, tint.toArgb(), "**", "Icon ink"),
+        rememberLottieDynamicProperty(LottieProperty.COLOR_FILTER, tintFilter, "**", "Icon ink"),
     )
 
     LaunchedEffect(composition) {
@@ -86,17 +89,18 @@ internal fun VaultCopyIcon(
  * 复制按钮在写入成功后播放确认动效。
  * @param enabled 是否可复制
  * @param modifier 按钮在当前容器中的位置
+ * @param tint 线条颜色，默认跟随主题和可用状态
  * @param onCopy 执行复制并在成功后调用传入的回调
  */
 @Composable
 internal fun VaultCopyButton(
     enabled: Boolean,
     modifier: Modifier = Modifier,
+    tint: Color = if (enabled) MiuixTheme.colorScheme.onSurface else MiuixTheme.colorScheme.onSurfaceVariantSummary,
     onCopy: (() -> Unit) -> Unit,
 ) {
     var copyVersion by remember { mutableIntStateOf(0) }
     val label = stringResource(R.string.vault_copy_password)
-    val colors = MiuixTheme.colorScheme
     IconButton(
         onClick = { onCopy { copyVersion++ } },
         modifier = modifier.semantics { contentDescription = label },
@@ -106,7 +110,7 @@ internal fun VaultCopyButton(
     ) {
         VaultCopyIcon(
             copyVersion, Modifier.size(22.dp),
-            tint = if (enabled) colors.onSurface else colors.onSurfaceVariantSummary,
+            tint = tint,
         )
     }
 }

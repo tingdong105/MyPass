@@ -53,6 +53,8 @@ import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import com.winter.mypass.R
 import com.winter.mypass.feature.home.model.PasswordDraft
+import com.winter.mypass.feature.home.model.PasswordPreviewSettings
+import com.winter.mypass.feature.home.model.PasswordVisibility
 import com.winter.mypass.feature.home.model.VaultCategory
 import com.winter.mypass.feature.home.model.VaultProblem
 import com.winter.mypass.feature.home.model.VaultSnapshot
@@ -85,6 +87,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
  * 在密码本上方显示详情和复制、编辑及删除操作。
  * @param detail 当前记录及 Sheet 阶段
  * @param snapshot 当前可用分类
+ * @param preview 当前密码显示模式与遮罩符号
  * @param busy 是否正在执行操作
  * @param problem 操作错误
  * @param onDismiss 开始收起详情
@@ -98,6 +101,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 internal fun PasswordDetailSheet(
     detail: VaultPage.Detail,
     snapshot: VaultSnapshot,
+    preview: PasswordPreviewSettings,
     busy: Boolean,
     problem: VaultProblem?,
     onDismiss: () -> Unit,
@@ -110,6 +114,7 @@ internal fun PasswordDetailSheet(
     val entry = detail.draft
     val open = detail.phase == DetailPhase.Open
     var deleting by remember(entry.id) { mutableStateOf(false) }
+    var visibility by remember(entry.id, preview) { mutableStateOf(preview.visibility) }
     val enabled = open && !busy && !deleting
     val sheetTitle = stringResource(R.string.vault_record)
 
@@ -130,12 +135,16 @@ internal fun PasswordDetailSheet(
         PasswordDetailContent(
             entry = entry,
             snapshot = snapshot,
+            preview = preview.copy(visibility = visibility),
             enabled = enabled,
             problem = problem,
             onDismiss = onDismiss,
             onEdit = onEdit,
             onRequestDelete = onDelete?.let { { deleting = true } },
             onCopy = onCopy,
+            onTogglePassword = {
+                visibility = if (visibility == PasswordVisibility.Full) PasswordVisibility.Hidden else PasswordVisibility.Full
+            },
             deletedAt = detail.deletedAt,
             onRestore = onRestore,
         )
@@ -157,12 +166,14 @@ internal fun PasswordDetailSheet(
  * 排列详情标题、密码操作和补充字段。
  * @param entry 当前记录
  * @param snapshot 当前可用分类
+ * @param preview 当前密码显示模式与遮罩符号
  * @param enabled 是否接受操作
  * @param problem 操作错误
  * @param onDismiss 关闭详情
  * @param onEdit 编辑记录
  * @param onRequestDelete 请求删除确认
  * @param onCopy 复制内容，按需通知成功
+ * @param onTogglePassword 临时切换密码显示与隐藏
  * @param deletedAt 回收站记录的删除时间
  * @param onRestore 恢复回收站中的记录
  */
@@ -170,12 +181,14 @@ internal fun PasswordDetailSheet(
 private fun PasswordDetailContent(
     entry: PasswordDraft,
     snapshot: VaultSnapshot,
+    preview: PasswordPreviewSettings,
     enabled: Boolean,
     problem: VaultProblem?,
     onDismiss: () -> Unit,
     onEdit: (() -> Unit)?,
     onRequestDelete: (() -> Unit)?,
     onCopy: (String, Boolean, (() -> Unit)?) -> Unit,
+    onTogglePassword: () -> Unit,
     deletedAt: Long? = null,
     onRestore: (() -> Unit)? = null,
 ) {
@@ -207,7 +220,14 @@ private fun PasswordDetailContent(
             verticalArrangement = Arrangement.spacedBy(Theme.spacing.medium),
         ) {
             VaultErrorText(problem)
-            DetailPasswordCard(entry.password, enabled) { onCopied -> onCopy(entry.password, true, onCopied) }
+            DetailPasswordCard(
+                password = preview.display(entry.password),
+                revealed = preview.visibility == PasswordVisibility.Full,
+                enabled = enabled,
+                onTogglePassword = onTogglePassword,
+            ) { onCopied ->
+                onCopy(entry.password, true, onCopied)
+            }
 
             val bookName = snapshot.books.firstOrNull { it.id == entry.bookId }?.name
             val typeName = snapshot.typeName(entry.typeId)
@@ -258,15 +278,19 @@ private fun PasswordDetailContent(
 }
 
 /**
- * 在独立卡片显示原密码，复制按钮垂直居中。
- * @param password 原密码
+ * 在独立卡片显示密码及可见性和复制操作。
+ * @param password 按当前模式处理的密码文本
+ * @param revealed 是否完整显示密码
  * @param enabled 是否接受操作
+ * @param onTogglePassword 临时切换密码显示与隐藏
  * @param onCopy 复制原密码并通知成功
  */
 @Composable
 private fun DetailPasswordCard(
     password: String,
+    revealed: Boolean,
     enabled: Boolean,
+    onTogglePassword: () -> Unit,
     onCopy: (() -> Unit) -> Unit,
 ) {
     val colors = MiuixTheme.colorScheme
@@ -290,7 +314,11 @@ private fun DetailPasswordCard(
                 )
                 Text(password, style = MiuixTheme.textStyles.title2, fontFamily = FontFamily.Monospace)
             }
-            VaultCopyButton(enabled, onCopy = onCopy)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                val tint = if (enabled) colors.onSurface else colors.onSurfaceVariantSummary
+                VaultPasswordVisibilityButton(revealed, enabled, tint, onClick = onTogglePassword)
+                VaultCopyButton(enabled, tint = tint, onCopy = onCopy)
+            }
         }
     }
 }
@@ -405,7 +433,8 @@ private fun DetailFieldDivider() {
 @VaultPreviews
 @Composable
 internal fun PasswordDetailPreview() {
-    val sample = previewSnapshot()
+    val preview = PasswordPreviewSettings()
+    val sample = previewSnapshot(preview)
     val tags = sample.tags + listOf(
         VaultCategory(2, "常用服务", 1),
         VaultCategory(3, "个人账号", 1),
@@ -416,7 +445,7 @@ internal fun PasswordDetailPreview() {
     MyPassTheme {
         val colors = MiuixTheme.colorScheme
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.BottomCenter) {
-            VaultTabbedPreview(VaultState(snapshot = snapshot, page = detail))
+            VaultTabbedPreview(VaultState(snapshot = snapshot, page = detail, passwordPreview = preview))
             Box(Modifier.fillMaxSize().background(colors.windowDimming))
             Card(
                 modifier = Modifier.widthIn(max = VaultLayout.PaneWidth).fillMaxWidth(),
@@ -430,7 +459,7 @@ internal fun PasswordDetailPreview() {
                         .background(BottomSheetDefaults.dragHandleColor(), RoundedCornerShape(percent = 50)),
                 )
                 PasswordDetailContent(
-                    detail.draft, snapshot, true, null, {}, {}, {}, { _, _, _ -> },
+                    detail.draft, snapshot, preview, true, null, {}, {}, {}, { _, _, _ -> }, {},
                 )
             }
         }
