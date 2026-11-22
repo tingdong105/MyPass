@@ -113,6 +113,7 @@ import com.rosan.installer.ui.navigation.MainPagerState
 import com.rosan.installer.ui.navigation.rememberMainPagerState
 import com.winter.mypass.R
 import com.winter.mypass.feature.home.model.CategoryKind
+import com.winter.mypass.feature.home.model.ClipboardClearTimeout
 import com.winter.mypass.feature.home.model.PasswordPreviewSettings
 import com.winter.mypass.feature.home.model.PasswordSummary
 import com.winter.mypass.feature.home.model.VaultCategory
@@ -286,6 +287,7 @@ internal fun VaultScreen(model: VaultViewModel, onBackup: () -> Unit, onChangeCr
                         onSort = model::sort,
                         onPasswordPreview = model::setPasswordPreview,
                         onNavigationSettings = model::setNavigationSettings,
+                        onClipboardClearTimeout = model::setClipboardClearTimeout,
                         onChangeCredential = onChangeCredential,
                         onBackup = onBackup,
                         onTrash = model::openTrash,
@@ -466,6 +468,7 @@ private fun VaultThemeLayers(
  * @param onSort 修改排序
  * @param onPasswordPreview 修改密码预览设置
  * @param onNavigationSettings 修改底栏样式偏好
+ * @param onClipboardClearTimeout 修改剪贴板清除时限
  * @param onChangeCredential 打开启动密码修改页
  * @param onBackup 打开备份页
  * @param onTrash 打开回收站
@@ -498,6 +501,7 @@ private fun VaultTopLevel(
     onSort: (VaultSort) -> Unit,
     onPasswordPreview: (PasswordPreviewSettings) -> Unit,
     onNavigationSettings: ((VaultNavigationSettings) -> VaultNavigationSettings) -> Unit,
+    onClipboardClearTimeout: (ClipboardClearTimeout) -> Unit,
     onChangeCredential: () -> Unit,
     onBackup: () -> Unit,
     onTrash: () -> Unit,
@@ -699,8 +703,9 @@ private fun VaultTopLevel(
                         VaultTab.Settings -> VaultColumn(body, Theme.spacing.medium, floatingClearance) {
                             VaultErrorText(state.problem)
                             VaultSettings(
-                                state.passwordPreview, state.navigation, state.busy, onPasswordPreview,
-                                onNavigationSettings, onChangeCredential, onBackup, onTrash, onManage,
+                                state.passwordPreview, state.navigation, state.clipboardClearTimeout,
+                                state.busy, onPasswordPreview, onNavigationSettings, onClipboardClearTimeout,
+                                onChangeCredential, onBackup, onTrash, onManage,
                                 dark = LocalDarkTheme.current,
                                 themeMode = LocalAppTheme.current?.mode ?: AppThemeMode.System,
                                 onTheme = LocalAppTheme.current?.takeIf { it.ready && it.reveal == null }?.let { it::select },
@@ -1177,6 +1182,7 @@ internal fun VaultTabbedPreview(state: VaultState, showDrawer: Boolean = false) 
                 workspace = workspace, themeToggle = themeToggle, emptyPlayback = emptyPlayback, outgoing = outgoing,
                 onTab = {}, onBook = {}, onManage = {}, onQuery = {}, onSort = {}, onPasswordPreview = {},
                 onNavigationSettings = {},
+                onClipboardClearTimeout = {},
                 onChangeCredential = {}, onBackup = {}, onTrash = {}, onClear = {}, onOpen = {}, onAdd = {}, onGeneratorOptions = {},
                 onRefreshGenerated = {}, onCopyGenerated = { _, _ -> }, onOpenGenerationHistory = {},
                 onToggleSelection = {}, onClearSelection = {}, onDeleteSelected = {},

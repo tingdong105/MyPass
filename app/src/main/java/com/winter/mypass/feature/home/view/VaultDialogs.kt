@@ -51,6 +51,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.winter.mypass.R
 import com.winter.mypass.feature.home.model.CategoryKind
+import com.winter.mypass.feature.home.model.ClipboardClearTimeout
 import com.winter.mypass.feature.home.model.PasswordDraft
 import com.winter.mypass.feature.home.model.PasswordPreviewSettings
 import com.winter.mypass.feature.home.model.PasswordSummary
@@ -85,6 +86,7 @@ import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.basic.Check
 import top.yukonga.miuix.kmp.icon.extended.Add
 import top.yukonga.miuix.kmp.icon.extended.Back
+import top.yukonga.miuix.kmp.icon.extended.Copy
 import top.yukonga.miuix.kmp.icon.extended.Delete
 import top.yukonga.miuix.kmp.icon.extended.Folder
 import top.yukonga.miuix.kmp.icon.extended.Layers
@@ -480,9 +482,11 @@ private fun CategoryRow(
  * 提供启动密码、界面样式和分类管理入口。
  * @param preview 当前显示模式与遮罩符号
  * @param navigation 当前底栏样式偏好
+ * @param clipboardClearTimeout 当前剪贴板清除时限
  * @param busy 是否正在保存设置
  * @param onPasswordPreview 保存预览设置
  * @param onNavigationSettings 保存底栏样式偏好
+ * @param onClipboardClearTimeout 保存剪贴板清除时限
  * @param onChangeCredential 打开启动密码修改页
  * @param onBackup 打开备份页
  * @param onTrash 打开回收站
@@ -496,9 +500,11 @@ private fun CategoryRow(
 internal fun VaultSettings(
     preview: PasswordPreviewSettings,
     navigation: VaultNavigationSettings,
+    clipboardClearTimeout: ClipboardClearTimeout,
     busy: Boolean,
     onPasswordPreview: (PasswordPreviewSettings) -> Unit,
     onNavigationSettings: ((VaultNavigationSettings) -> VaultNavigationSettings) -> Unit,
+    onClipboardClearTimeout: (ClipboardClearTimeout) -> Unit,
     onChangeCredential: () -> Unit,
     onBackup: () -> Unit,
     onTrash: () -> Unit,
@@ -511,10 +517,11 @@ internal fun VaultSettings(
     var choosingTheme by remember { mutableStateOf(false) }
     var choosingSymbol by remember { mutableStateOf(false) }
     var choosingVisibility by remember { mutableStateOf(false) }
+    var choosingClipboardTimeout by remember { mutableStateOf(false) }
     var customSymbol by remember { mutableStateOf<String?>(null) }
     val symbolTitle = stringResource(R.string.vault_mask_symbol)
     val popupVisibility by rememberUpdatedState(onPopupVisibility)
-    val popupOpen = choosingSymbol || choosingVisibility || choosingTheme
+    val popupOpen = choosingSymbol || choosingVisibility || choosingTheme || choosingClipboardTimeout
     DisposableEffect(popupOpen) {
         popupVisibility(popupOpen)
         onDispose { if (popupOpen) popupVisibility(false) }
@@ -539,6 +546,11 @@ internal fun VaultSettings(
             enabled = !busy,
             icon = MiuixIcons.Lock,
             onClick = onChangeCredential,
+        )
+        VaultRowDivider()
+        ClipboardClearTimeoutMenu(
+            clipboardClearTimeout, !busy, choosingClipboardTimeout, { choosingClipboardTimeout = it },
+            onClipboardClearTimeout,
         )
     }
     SettingsSection(R.string.vault_style_settings) {
@@ -754,6 +766,57 @@ private fun PasswordVisibilityMenu(
         }
     }
 }
+
+/**
+ * 在剪贴板设置行展开 Miuix 单选下拉菜单。
+ * @param timeout 当前清除时限
+ * @param enabled 是否可以选择
+ * @param show 是否展开菜单
+ * @param onShow 修改菜单展开状态
+ * @param onSelect 保存所选时限
+ */
+@Composable
+private fun ClipboardClearTimeoutMenu(
+    timeout: ClipboardClearTimeout,
+    enabled: Boolean,
+    show: Boolean,
+    onShow: (Boolean) -> Unit,
+    onSelect: (ClipboardClearTimeout) -> Unit,
+) {
+    Box {
+        VaultLink(
+            stringResource(R.string.vault_clipboard_clear_timeout), enabled = enabled,
+            icon = MiuixIcons.Copy, value = stringResource(timeout.label), onClick = { onShow(true) },
+        )
+        OverlayListPopup(
+            show = show, alignment = PopupPositionProvider.Align.End,
+            enableWindowDim = true, onDismissRequest = { onShow(false) },
+        ) {
+            ListPopupColumn {
+                ClipboardClearTimeout.entries.forEachIndexed { index, option ->
+                    DropdownImpl(
+                        text = stringResource(option.label), optionSize = ClipboardClearTimeout.entries.size,
+                        isSelected = timeout == option, index = index, enabled = enabled,
+                        onSelectedIndexChange = {
+                            onShow(false)
+                            if (timeout != option) onSelect(option)
+                        },
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** 剪贴板清除时限对应的本地化名称。 */
+@get:StringRes
+private val ClipboardClearTimeout.label: Int
+    get() = when (this) {
+        ClipboardClearTimeout.Never -> R.string.vault_clipboard_clear_never
+        ClipboardClearTimeout.Seconds30 -> R.string.vault_clipboard_clear_30_seconds
+        ClipboardClearTimeout.Minute1 -> R.string.vault_clipboard_clear_1_minute
+        ClipboardClearTimeout.Minutes5 -> R.string.vault_clipboard_clear_5_minutes
+    }
 
 /** 密码显示模式对应的本地化名称。 */
 @get:StringRes

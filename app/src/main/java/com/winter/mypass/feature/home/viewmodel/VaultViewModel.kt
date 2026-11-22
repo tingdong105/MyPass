@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.winter.mypass.core.utils.MMKVUtils
 import com.winter.mypass.feature.home.model.CategoryKind
+import com.winter.mypass.feature.home.model.ClipboardClearTimeout
 import com.winter.mypass.feature.home.model.GeneratedPasswordCopy
 import com.winter.mypass.feature.home.model.PasswordDraft
 import com.winter.mypass.feature.home.model.PasswordGenerator
@@ -157,6 +158,7 @@ internal data class VaultState(
     val sort: VaultSort = VaultSort(),
     val passwordPreview: PasswordPreviewSettings = PasswordPreviewSettings(),
     val navigation: VaultNavigationSettings = VaultNavigationSettings(),
+    val clipboardClearTimeout: ClipboardClearTimeout = ClipboardClearTimeout.Seconds30,
     val query: String = "",
     val selectedPasswordIds: Set<Long> = emptySet(),
     val tab: VaultTab = VaultTab.Home,
@@ -210,9 +212,10 @@ internal class VaultViewModel(
     }
 
     /**
-     * 加载上次选择的密码本，恢复排序、密码显示和底栏样式。
+     * 加载上次选择的密码本，恢复界面偏好和剪贴板清除时限。
      */
     fun load() = perform {
+        val clipboardClearTimeout = clipboard.loadClearTimeout()
         val preferences = withContext(Dispatchers.IO) {
             val navigation = try {
                 MMKVUtils.getObject<VaultNavigationSettings>(NavigationSettingsKey)
@@ -233,6 +236,7 @@ internal class VaultViewModel(
             sort = preferences.sort,
             passwordPreview = preferences.preview,
             navigation = preferences.navigation,
+            clipboardClearTimeout = clipboardClearTimeout,
         )
     }
 
@@ -326,6 +330,18 @@ internal class VaultViewModel(
                 check(MMKVUtils.putString(PasswordVisibilityKey, "${preview.visibility.storageValue}:${preview.symbol}"))
             }
             mutableState.value = current.copy(snapshot = snapshot, passwordPreview = preview)
+        }
+    }
+
+    /**
+     * 保存敏感剪贴板的自动清除时限。
+     * @param timeout 用户选择的时限
+     */
+    fun setClipboardClearTimeout(timeout: ClipboardClearTimeout) {
+        if (current.tab != VaultTab.Settings || current.clipboardClearTimeout == timeout) return
+        performFromTabs {
+            clipboard.setClearTimeout(timeout)
+            mutableState.value = current.copy(clipboardClearTimeout = timeout)
         }
     }
 

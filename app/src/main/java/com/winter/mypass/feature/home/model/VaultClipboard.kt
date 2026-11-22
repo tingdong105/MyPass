@@ -11,11 +11,26 @@ import androidx.compose.ui.platform.AndroidClipboard
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.Clipboard
 import com.winter.mypass.R
+import com.winter.mypass.core.utils.MMKVUtils
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.UUID
+
+/**
+ * 敏感剪贴板的自动清除时限，零表示不自动清除。
+ * @author Tingdong
+ * @date 2026-11-22
+ */
+internal enum class ClipboardClearTimeout(val milliseconds: Long) {
+    Never(0L),
+    Seconds30(30_000L),
+    Minute1(60_000L),
+    Minutes5(300_000L),
+}
 
 /**
  * 在主线程跟踪本应用复制的敏感剪贴板条目。
@@ -28,6 +43,34 @@ internal class VaultClipboard(private val context: Context, private val scope: C
     private var pending: PendingClip? = null
     private var timer: Job? = null
     private var copyToast: Toast? = null
+    private var clearTimeout = ClipboardClearTimeout.Seconds30
+
+    /**
+     * 恢复清除时限，缺失或无效的值回退到三十秒。
+     * @return 已保存或默认的时限
+     */
+    suspend fun loadClearTimeout(): ClipboardClearTimeout {
+        val stored = withContext(Dispatchers.IO) {
+            MMKVUtils.getLong(TimeoutKey, ClipboardClearTimeout.Seconds30.milliseconds)
+        }
+        clearTimeout = ClipboardClearTimeout.entries.firstOrNull { it.milliseconds == stored }
+            ?: ClipboardClearTimeout.Seconds30
+        scheduleClear()
+        return clearTimeout
+    }
+
+    /**
+     * 保存清除时限，并按原复制时间重新计算待清除条目的期限。
+     * @param timeout 用户选择的时限
+     * @throws IllegalStateException 写入失败
+     */
+    suspend fun setClearTimeout(timeout: ClipboardClearTimeout) {
+        withContext(Dispatchers.IO) {
+            check(MMKVUtils.putLong(TimeoutKey, timeout.milliseconds))
+        }
+        clearTimeout = timeout
+        scheduleClear()
+    }
 
     // Compose 的粘贴菜单要求剪贴板实现 AndroidClipboard 才能查询内容类型。
     @SuppressLint("VisibleForTests")
@@ -47,6 +90,9 @@ internal class VaultClipboard(private val context: Context, private val scope: C
         override suspend fun setClipEntry(clipEntry: ClipEntry?) {
             if (clipEntry == null) {
                 clipboard.clearPrimaryClip()
+                pending = null
+                timer?.cancel()
+                timer = null
             } else {
                 copyClip(clipEntry.clipData, sensitive = true, showToast = false)
             }
@@ -70,7 +116,7 @@ internal class VaultClipboard(private val context: Context, private val scope: C
      * @param showToast 是否显示复制反馈
      */
     private fun copyClip(clip: ClipData, sensitive: Boolean, showToast: Boolean) {
-        val stamp = if (sensitive) PendingClip(UUID.randomUUID().toString(), SystemClock.elapsedRealtime() + Timeout) else null
+        val stamp = if (sensitive) PendingClip(UUID.randomUUID().toString(), SystemClock.elapsedRealtime()) else null
         if (stamp != null) {
             clip.description.extras = PersistableBundle().apply {
                 putString(ClipToken, stamp.id)
@@ -79,14 +125,24 @@ internal class VaultClipboard(private val context: Context, private val scope: C
         }
         clipboard.setPrimaryClip(clip)
         pending = stamp
-        timer?.cancel()
-        timer = if (stamp == null) null else scope.launch {
-            delay((stamp.expiresAt - SystemClock.elapsedRealtime()).coerceAtLeast(0))
-            clearExpired()
-        }
+        scheduleClear()
         if (showToast) {
             copyToast?.cancel()
             copyToast = Toast.makeText(context, R.string.vault_copied, Toast.LENGTH_SHORT).also(Toast::show)
+        }
+    }
+
+    /**
+     * 根据当前时限重建清除任务，永不清除时取消计时。
+     */
+    private fun scheduleClear() {
+        timer?.cancel()
+        timer = null
+        val clip = pending ?: return
+        if (clearTimeout == ClipboardClearTimeout.Never) return
+        timer = scope.launch {
+            delay((clip.copiedAt + clearTimeout.milliseconds - SystemClock.elapsedRealtime()).coerceAtLeast(0))
+            clearExpired()
         }
     }
 
@@ -104,7 +160,9 @@ internal class VaultClipboard(private val context: Context, private val scope: C
      */
     private fun clearExpired() {
         val clip = pending ?: return
-        if (!focused || SystemClock.elapsedRealtime() < clip.expiresAt) return
+        if (!focused || clearTimeout == ClipboardClearTimeout.Never ||
+            SystemClock.elapsedRealtime() - clip.copiedAt < clearTimeout.milliseconds
+        ) return
         if (clipboard.primaryClipDescription?.extras?.getString(ClipToken) == clip.id) {
             clipboard.clearPrimaryClip()
         }
@@ -116,10 +174,10 @@ internal class VaultClipboard(private val context: Context, private val scope: C
      * @author Tingdong
      * @date 2026-11-19
      */
-    private data class PendingClip(val id: String, val expiresAt: Long)
+    private data class PendingClip(val id: String, val copiedAt: Long)
 
     private companion object {
-        const val Timeout = 30_000L
+        const val TimeoutKey = "vault.clipboard_clear_timeout"
         const val ClipToken = "com.winter.mypass.clip.token"
         const val SensitiveClipKey = "android.content.extra.IS_SENSITIVE"
     }

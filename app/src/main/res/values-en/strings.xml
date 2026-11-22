@@ -86,6 +86,11 @@
     <string name="vault_password">Password</string>
     <string name="vault_password_visibility">Password visibility</string>
     <string name="vault_security_settings">Security</string>
+    <string name="vault_clipboard_clear_timeout">Clear clipboard after</string>
+    <string name="vault_clipboard_clear_never">Never</string>
+    <string name="vault_clipboard_clear_30_seconds">30 seconds</string>
+    <string name="vault_clipboard_clear_1_minute">1 minute</string>
+    <string name="vault_clipboard_clear_5_minutes">5 minutes</string>
     <string name="vault_style_settings">Appearance</string>
     <string name="appearance_theme">Theme</string>
     <string name="appearance_follow_system">Follow system</string>

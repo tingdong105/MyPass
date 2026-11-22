@@ -85,6 +85,11 @@
     <string name="vault_password">密码</string>
     <string name="vault_password_visibility">密码显示</string>
     <string name="vault_security_settings">安全</string>
+    <string name="vault_clipboard_clear_timeout">剪贴板清除时间</string>
+    <string name="vault_clipboard_clear_never">永不清除</string>
+    <string name="vault_clipboard_clear_30_seconds">30秒</string>
+    <string name="vault_clipboard_clear_1_minute">1分钟</string>
+    <string name="vault_clipboard_clear_5_minutes">5分钟</string>
     <string name="vault_style_settings">外观</string>
     <string name="appearance_theme">主题</string>
     <string name="appearance_follow_system">跟随系统</string>
