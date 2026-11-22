@@ -63,6 +63,7 @@ import com.winter.mypass.feature.applock.viewmodel.AppLockState
 import com.winter.mypass.feature.applock.viewmodel.LockError
 import com.winter.mypass.feature.applock.viewmodel.LockScreen
 import com.winter.mypass.feature.applock.viewmodel.LockStorageError
+import com.winter.mypass.feature.applock.viewmodel.PinFeedback
 import com.winter.mypass.ui.theme.MyPassTheme
 import com.winter.mypass.ui.theme.Theme
 import kotlinx.coroutines.delay
@@ -85,6 +86,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
  * @param onChooseAgain 返回类型选择
  * @param onSubmit 提交凭据
  * @param onRetry 重试读取本机凭据
+ * @param onPinFeedbackFinished PIN 验证动画结束时交回输入轮次
  */
 @Composable
 internal fun AppLockScreen(
@@ -93,6 +95,7 @@ internal fun AppLockScreen(
     onChooseAgain: () -> Unit,
     onSubmit: (CharArray) -> Unit,
     onRetry: () -> Unit,
+    onPinFeedbackFinished: (Int) -> Unit = {},
 ) {
     val screen = state.screen
     val greetingAsset = when (screen) {
@@ -134,6 +137,7 @@ internal fun AppLockScreen(
             onChooseAgain = onChooseAgain,
             onSubmit = onSubmit,
             onRetry = onRetry,
+            onPinFeedbackFinished = onPinFeedbackFinished,
         )
     }
 }
@@ -157,6 +161,7 @@ private val LockScreen.setupStep: Int?
  * @param onChooseAgain 返回类型选择
  * @param onSubmit 提交凭据
  * @param onRetry 重试读取凭据
+ * @param onPinFeedbackFinished PIN 验证动画结束时交回输入轮次
  */
 @Composable
 private fun AppLockPage(
@@ -167,6 +172,7 @@ private fun AppLockPage(
     onChooseAgain: () -> Unit,
     onSubmit: (CharArray) -> Unit,
     onRetry: () -> Unit,
+    onPinFeedbackFinished: (Int) -> Unit,
 ) {
     val screen = state.screen
     val type = when (screen) {
@@ -244,6 +250,7 @@ private fun AppLockPage(
                         retryAt = screen.retryAt,
                         onSubmit = onSubmit,
                         showProgress = false,
+                        onPinFeedbackFinished = onPinFeedbackFinished,
                     )
                     is LockScreen.Unavailable -> {
                         val title = if (screen.reason == LockStorageError.VaultUnavailable) {
@@ -303,6 +310,7 @@ private fun CredentialTypeOptions(enabled: Boolean, onChoose: (CredentialType) -
  * @param bottomAligned 是否为底部输入区保留标题间距及图案操作位
  * @param showProgress 是否显示凭据提交时的进度指示器
  * @param onSubmit 提交输入
+ * @param onPinFeedbackFinished PIN 验证动画结束通知，空值表示不播放
  */
 @Composable
 internal fun CredentialEntry(
@@ -317,7 +325,10 @@ internal fun CredentialEntry(
     @StringRes submitLabel: Int = R.string.lock_submit,
     bottomAligned: Boolean = false,
     showProgress: Boolean = true,
+    onPinFeedbackFinished: ((Int) -> Unit)? = null,
 ) {
+    val verifyingPin = active && state.busy && state.screen is LockScreen.Locked &&
+        type.pinLength > 0 && onPinFeedbackFinished != null
     val seconds by key(retryAt) {
         produceState(remainingSeconds(retryAt), retryAt) {
             while (value > 0) {
@@ -359,6 +370,11 @@ internal fun CredentialEntry(
                 inputRevision = state.inputRevision,
                 showCompletion = state.busy || !active,
                 onSubmit = onSubmit,
+                verifying = verifyingPin,
+                feedback = if (verifyingPin) state.pinFeedback else PinFeedback.None,
+                onVerificationFinished = {
+                    onPinFeedbackFinished?.invoke(state.inputRevision)
+                },
             )
             CredentialType.Password -> key(state.inputRevision) {
                 PasswordInput(enabled = enabled, submitLabel = submitLabel, onSubmit = onSubmit)
@@ -534,5 +550,39 @@ private fun AppLockSetupPreview() {
 private fun AppLockUnlockPreview() {
     MyPassTheme(dynamicColor = false) {
         AppLockScreen(AppLockState(LockScreen.Locked(CredentialType.Pin6, 0)), {}, {}, {}, {})
+    }
+}
+
+/**
+ * 预览逐位验证动画的手机与平板布局。
+ */
+@Preview(name = "验证 · 手机浅色", widthDp = 360, heightDp = 800, uiMode = Configuration.UI_MODE_NIGHT_NO)
+@Preview(name = "验证 · 手机深色", widthDp = 360, heightDp = 800, uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Preview(name = "验证 · 平板浅色", widthDp = 1280, heightDp = 800, uiMode = Configuration.UI_MODE_NIGHT_NO)
+@Preview(name = "验证 · 平板深色", widthDp = 1280, heightDp = 800, uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Composable
+private fun AppLockVerificationPreview() {
+    MyPassTheme(dynamicColor = false) {
+        AppLockScreen(
+            AppLockState(LockScreen.Locked(CredentialType.Pin6, 0), busy = true, pinFeedback = PinFeedback.Success),
+            {}, {}, {}, {},
+        )
+    }
+}
+
+/**
+ * 预览密码错误抖动的手机与平板布局。
+ */
+@Preview(name = "错误 · 手机浅色", widthDp = 360, heightDp = 800, uiMode = Configuration.UI_MODE_NIGHT_NO)
+@Preview(name = "错误 · 手机深色", widthDp = 360, heightDp = 800, uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Preview(name = "错误 · 平板浅色", widthDp = 1280, heightDp = 800, uiMode = Configuration.UI_MODE_NIGHT_NO)
+@Preview(name = "错误 · 平板深色", widthDp = 1280, heightDp = 800, uiMode = Configuration.UI_MODE_NIGHT_YES)
+@Composable
+private fun AppLockIncorrectPreview() {
+    MyPassTheme(dynamicColor = false) {
+        AppLockScreen(
+            AppLockState(LockScreen.Locked(CredentialType.Pin6, 0), busy = true, pinFeedback = PinFeedback.Incorrect),
+            {}, {}, {}, {},
+        )
     }
 }

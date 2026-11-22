@@ -6,6 +6,7 @@ import android.provider.Settings
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.AtomicFile
+import com.winter.mypass.core.utils.MMKVUtils
 import com.winter.mypass.feature.home.model.VaultRepository
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -16,14 +17,13 @@ import java.io.DataOutputStream
 import java.io.EOFException
 import java.io.File
 import java.io.FileNotFoundException
-import java.io.FileOutputStream
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.NoSuchFileException
-import java.nio.file.StandardCopyOption
 import java.nio.file.attribute.BasicFileAttributes
 import java.security.KeyStore
 import java.security.KeyStoreException
+import java.security.MessageDigest
 import java.security.SecureRandom
 import javax.crypto.AEADBadTagException
 import javax.crypto.Cipher
@@ -35,15 +35,19 @@ import javax.crypto.spec.PBEKeySpec
 import javax.crypto.spec.SecretKeySpec
 
 /**
- * 保存应用密码封装的密码库密钥及失败次数，调用方负责 IO 调度。
+ * 在独立 MMKV 中保存 Keystore 加密的快速校验记录。
  * @author Tingdong
  * @date 2026-11-18
  */
 internal class CredentialStore(context: Context) {
     private val appContext = context.applicationContext
     private val file by lazy { AtomicFile(File(appContext.noBackupFilesDir, "app-lock")) }
+    private val records by lazy {
+        MMKVUtils.getInstance("app-lock", rootDir = File(appContext.noBackupFilesDir, "app-lock-mmkv").path)
+    }
     private val mutex = Mutex()
     private val random by lazy { SecureRandom() }
+    private var cachedDeviceKey: SecretKey? = null
 
     /**
      * 存储操作的结果，解锁密钥由接收方负责清除。
@@ -154,9 +158,13 @@ internal class CredentialStore(context: Context) {
         val salt = ByteArray(SaltSize).also(random::nextBytes)
         val vaultKey = ByteArray(KeySize).also(random::nextBytes)
         try {
-            val wrapped = encrypt(deriveKey(input, salt), credentialAad(type), vaultKey)
-            val record = Record(type, salt, wrapped, failed = 0, retryAt = 0, boot = UnknownBoot)
-            writeRecord(record, deviceKey(create = true))
+            val key = deviceKey(create = true)
+            val wrapped = encrypt(key, credentialAad(type, fast = true), vaultKey)
+            val record = Record(
+                type, salt, wrapped, failed = 0, retryAt = 0, boot = UnknownBoot,
+                verifier = credentialVerifier(type, input, salt),
+            )
+            writeRecord(record, key)
             Result.Unlocked(vaultKey)
         } catch (failure: Throwable) {
             vaultKey.fill(0)
@@ -218,13 +226,19 @@ internal class CredentialStore(context: Context) {
                 if (record.type != authorization.type || !record.salt.contentEquals(authorization.salt)) {
                     return@withLock ChangeResult.StaleAuthorization
                 }
-                if (type == record.type && matchesCredential(record, input)) {
+                if (type == record.type && matchesCredential(record, input, key)) {
                     keepAuthorization = true
                     return@withLock ChangeResult.SameAsCurrent
                 }
                 val salt = ByteArray(SaltSize).also(random::nextBytes)
-                val wrapped = encrypt(deriveKey(input, salt), credentialAad(type), vaultKey)
-                writeRecord(Record(type, salt, wrapped, failed = 0, retryAt = 0, boot = UnknownBoot), key)
+                val wrapped = encrypt(key, credentialAad(type, fast = true), vaultKey)
+                writeRecord(
+                    Record(
+                        type, salt, wrapped, failed = 0, retryAt = 0, boot = UnknownBoot,
+                        verifier = credentialVerifier(type, input, salt),
+                    ),
+                    key,
+                )
                 ChangeResult.Saved
             } finally {
                 if (!keepAuthorization) authorization.clear()
@@ -235,10 +249,11 @@ internal class CredentialStore(context: Context) {
      * 判断输入是否与已认证记录中的凭据相同。
      * @param record 当前凭据记录
      * @param input 待比较的新密码
+     * @param key 本次操作取得的 Keystore 密钥
      * @return 输入是否能解封当前记录
      */
-    private fun matchesCredential(record: Record, input: CharArray): Boolean = try {
-        unwrapVaultKey(record, input).fill(0)
+    private fun matchesCredential(record: Record, input: CharArray, key: SecretKey): Boolean = try {
+        unwrapVaultKey(record, input, key).fill(0)
         true
     } catch (_: AEADBadTagException) {
         false
@@ -248,11 +263,43 @@ internal class CredentialStore(context: Context) {
      * 使用输入的密码解封记录中的密码库密钥。
      * @param record 当前凭据记录
      * @param input 用于解封的密码
+     * @param key 本次操作取得的 Keystore 密钥
      * @return 由调用方负责清除的密码库密钥
      * @throws AEADBadTagException 输入无法通过认证
      */
-    private fun unwrapVaultKey(record: Record, input: CharArray): ByteArray =
-        decrypt(deriveKey(input, record.salt), credentialAad(record.type), record.wrapped)
+    private fun unwrapVaultKey(record: Record, input: CharArray, key: SecretKey): ByteArray {
+        val verifier = record.verifier
+        if (verifier == null) {
+            return decrypt(deriveKey(input, record.salt), credentialAad(record.type), record.wrapped)
+        }
+        val candidate = credentialVerifier(record.type, input, record.salt)
+        try {
+            if (!MessageDigest.isEqual(verifier, candidate)) throw AEADBadTagException("Incorrect credential")
+        } finally {
+            candidate.fill(0)
+        }
+        return decrypt(key, credentialAad(record.type, fast = true), record.wrapped)
+    }
+
+    /**
+     * 生成仅保存在 Keystore 密文内的快速校验摘要。
+     * @param type 凭据类型
+     * @param input 已校验格式的 ASCII 凭据
+     * @param salt 每份凭据独立的随机盐
+     * @return 32 字节摘要
+     */
+    private fun credentialVerifier(type: CredentialType, input: CharArray, salt: ByteArray): ByteArray {
+        val bytes = ByteArray(input.size) { input[it].code.toByte() }
+        return try {
+            MessageDigest.getInstance("SHA-256").run {
+                update(credentialAad(type, fast = true))
+                update(salt)
+                digest(bytes)
+            }
+        } finally {
+            bytes.fill(0)
+        }
+    }
 
     /**
      * 读取现有凭据并恢复当前引导周期内的等待期限。
@@ -283,20 +330,36 @@ internal class CredentialStore(context: Context) {
         // 先落盘再验证，进程中断时也保留本次尝试。
         writeRecord(attempted, key)
         val vaultKey = try {
-            unwrapVaultKey(record, input)
+            unwrapVaultKey(record, input, key)
         } catch (_: AEADBadTagException) {
             val cooldown = if (retryAt == 0L) 0L else SystemClock.elapsedRealtime() + CooldownMillis
             if (cooldown != retryAt) writeRecord(attempted.copy(retryAt = cooldown), key)
             return Result.Locked(type, cooldown, incorrect = true)
         }
         return try {
-            writeRecord(record.copy(failed = 0, retryAt = 0, boot = UnknownBoot), key)
+            val saved = upgradeRecord(record, input, vaultKey, key)
+                .copy(failed = 0, retryAt = 0, boot = UnknownBoot)
+            writeRecord(saved, key)
             Result.Unlocked(vaultKey)
         } catch (failure: Throwable) {
             vaultKey.fill(0)
             throw failure
         }
     }
+
+    /**
+     * 旧密码验证通过后转换记录，沿用授权盐和数据库密钥。
+     * @param record 已通过密码认证的记录
+     * @param input 本次正确输入
+     * @param vaultKey 解封的原数据库密钥
+     * @param key 本机 Keystore 密钥
+     * @return 快速格式记录，新版记录直接复用
+     */
+    private fun upgradeRecord(record: Record, input: CharArray, vaultKey: ByteArray, key: SecretKey): Record =
+        if (record.verifier != null) record else record.copy(
+            wrapped = encrypt(key, credentialAad(record.type, fast = true), vaultKey),
+            verifier = credentialVerifier(record.type, input, record.salt),
+        )
 
     /**
      * 设备重启后重新锚定已开始的等待期限。
@@ -326,6 +389,10 @@ internal class CredentialStore(context: Context) {
      * @throws IOException 记录格式错误或无法读取
      */
     private fun readRecord(key: SecretKey? = null): Record? {
+        if (records.containsKey(RecordKey)) {
+            val encrypted = records.decodeBytes(RecordKey) ?: throw InvalidRecord()
+            return decodeRecord(encrypted, key ?: deviceKey())
+        }
         val source = try {
             file.openRead()
         } catch (failure: FileNotFoundException) {
@@ -339,32 +406,59 @@ internal class CredentialStore(context: Context) {
             }
             throw MissingRecord()
         }
-        try {
-            val encrypted = DataInputStream(source).use { input ->
-                if (input.readInt() != FormatVersion) throw InvalidRecord()
-                ByteArray(IvSize + RecordSize + TagSize).also {
+        val encrypted = try {
+            DataInputStream(source).use { input ->
+                ByteArray(Int.SIZE_BYTES + IvSize + RecordSize + TagSize).also {
                     input.readFully(it)
                     if (input.read() != -1) throw InvalidRecord()
                 }
             }
-            val data = decrypt(key ?: deviceKey(), DeviceAad, encrypted)
-            return DataInputStream(ByteArrayInputStream(data)).use { input ->
-                val typeId = input.readUnsignedByte()
-                val type = CredentialType.entries.firstOrNull { it.id == typeId } ?: throw InvalidRecord()
-                val failed = input.readUnsignedByte()
-                val retryAt = input.readLong()
-                val boot = input.readInt()
-                if (failed > MaxAttempts || retryAt < 0 || (failed == MaxAttempts) != (retryAt > 0)) {
-                    throw InvalidRecord()
+        } catch (failure: EOFException) {
+            throw InvalidRecord(failure)
+        }
+        return decodeRecord(encrypted, key ?: deviceKey())
+    }
+
+    /**
+     * 认证并解析新旧两种凭据格式。
+     * @param bytes 带版本头的加密记录
+     * @param key 本机 Keystore 密钥
+     * @return 已通过完整性校验的记录
+     * @throws InvalidRecord 版本、长度或认证结果无效
+     */
+    private fun decodeRecord(bytes: ByteArray, key: SecretKey): Record {
+        try {
+            val input = DataInputStream(ByteArrayInputStream(bytes))
+            val version = input.readInt()
+            if (version != FormatVersion && version != LegacyVersion) throw InvalidRecord()
+            val size = RecordSize + if (version == FormatVersion) KeySize else 0
+            val encrypted = ByteArray(IvSize + size + TagSize).also {
+                input.readFully(it)
+                if (input.read() != -1) throw InvalidRecord()
+            }
+            val data = decrypt(key, deviceAad(version), encrypted)
+            return try {
+                DataInputStream(ByteArrayInputStream(data)).use { payload ->
+                    val typeId = payload.readUnsignedByte()
+                    val type = CredentialType.entries.firstOrNull { it.id == typeId } ?: throw InvalidRecord()
+                    val failed = payload.readUnsignedByte()
+                    val retryAt = payload.readLong()
+                    val boot = payload.readInt()
+                    if (failed > MaxAttempts || retryAt < 0 || (failed == MaxAttempts) != (retryAt > 0)) {
+                        throw InvalidRecord()
+                    }
+                    Record(
+                        type = type,
+                        salt = ByteArray(SaltSize).also(payload::readFully),
+                        wrapped = ByteArray(WrappedSize).also(payload::readFully),
+                        failed = failed,
+                        retryAt = retryAt,
+                        boot = boot,
+                        verifier = if (version == FormatVersion) ByteArray(KeySize).also(payload::readFully) else null,
+                    )
                 }
-                Record(
-                    type = type,
-                    salt = ByteArray(SaltSize).also(input::readFully),
-                    wrapped = ByteArray(WrappedSize).also(input::readFully),
-                    failed = failed,
-                    retryAt = retryAt,
-                    boot = boot,
-                )
+            } finally {
+                data.fill(0)
             }
         } catch (failure: EOFException) {
             throw InvalidRecord(failure)
@@ -374,12 +468,29 @@ internal class CredentialStore(context: Context) {
     }
 
     /**
-     * 加密并原子写入记录。
+     * 加密后同步保存 MMKV，成功后移除旧版文件。
      * @param record 待写入的记录
      * @param key Android Keystore 密钥
      * @throws IOException 记录无法保存
      */
     private fun writeRecord(record: Record, key: SecretKey) {
+        val encrypted = encodeRecord(record, key)
+        if (!records.encode(RecordKey, encrypted)) throw IOException("Credential MMKV write failed")
+        records.sync()
+        if (!MessageDigest.isEqual(encrypted, records.decodeBytes(RecordKey))) {
+            throw IOException("Credential MMKV verification failed")
+        }
+        file.delete()
+    }
+
+    /**
+     * 将凭据序列化为带认证的版本化密文。
+     * @param record 本次保存的完整记录
+     * @param key 本机 Keystore 密钥
+     * @return 可持久化的密文
+     */
+    private fun encodeRecord(record: Record, key: SecretKey): ByteArray {
+        val version = if (record.verifier == null) LegacyVersion else FormatVersion
         val payload = ByteArrayOutputStream(RecordSize).apply {
             DataOutputStream(this).use { output ->
                 output.writeByte(record.type.id)
@@ -388,9 +499,19 @@ internal class CredentialStore(context: Context) {
                 output.writeInt(record.boot)
                 output.write(record.salt)
                 output.write(record.wrapped)
+                record.verifier?.let(output::write)
             }
         }.toByteArray()
-        replaceRecord(file.baseFile, encrypt(key, DeviceAad, payload))
+        return try {
+            ByteArrayOutputStream().apply {
+                DataOutputStream(this).use { output ->
+                    output.writeInt(version)
+                    output.write(encrypt(key, deviceAad(version), payload))
+                }
+            }.toByteArray()
+        } finally {
+            payload.fill(0)
+        }
     }
 
     /**
@@ -400,8 +521,12 @@ internal class CredentialStore(context: Context) {
      * @throws MissingKey 已配置记录缺少密钥
      */
     private fun deviceKey(create: Boolean = false): SecretKey {
+        cachedDeviceKey?.let { return it }
         val store = KeyStore.getInstance(KeyStoreProvider).apply { load(null) }
-        (store.getKey(KeyAlias, null) as? SecretKey)?.let { return it }
+        (store.getKey(KeyAlias, null) as? SecretKey)?.let {
+            cachedDeviceKey = it
+            return it
+        }
         if (!create) throw MissingKey()
         return KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, KeyStoreProvider).run {
             init(
@@ -415,11 +540,11 @@ internal class CredentialStore(context: Context) {
                     .build(),
             )
             generateKey()
-        }
+        }.also { cachedDeviceKey = it }
     }
 
     /**
-     * 从输入和随机盐派生密码封装密钥。
+     * 仅为迁移旧记录执行原版密码派生。
      * @param input 应用密码
      * @param salt 本机记录的盐
      * @return AES 密钥
@@ -441,9 +566,19 @@ internal class CredentialStore(context: Context) {
     /**
      * 生成绑定凭据类型的认证关联数据。
      * @param type 应用密码类型
+     * @param fast 是否为 Keystore 保护的快速格式
      * @return 格式版本与类型字节
      */
-    private fun credentialAad(type: CredentialType): ByteArray = byteArrayOf(1, type.id.toByte())
+    private fun credentialAad(type: CredentialType, fast: Boolean = false): ByteArray =
+        byteArrayOf(if (fast) 2 else 1, type.id.toByte())
+
+    /**
+     * 将记录版本绑定到设备加密认证。
+     * @param version 持久化格式版本
+     * @return 认证关联数据
+     */
+    private fun deviceAad(version: Int): ByteArray =
+        byteArrayOf(0x4d, 0x50, 0x4c, version.toByte())
 
     /**
      * 使用随机 IV 加密并认证数据。
@@ -488,6 +623,7 @@ internal class CredentialStore(context: Context) {
         val failed: Int,
         val retryAt: Long,
         val boot: Int,
+        val verifier: ByteArray? = null,
     ) {
         /**
          * 按引导周期恢复冷却。确认重启时，开机后的时间计入等待。
@@ -505,7 +641,9 @@ internal class CredentialStore(context: Context) {
     }
 
     private companion object {
-        const val FormatVersion = 0x4d504c01
+        const val LegacyVersion = 0x4d504c01
+        const val FormatVersion = 0x4d504c02
+        const val RecordKey = "credential"
         const val KeyStoreProvider = "AndroidKeyStore"
         const val KeyAlias = "mypass.app-lock.v1"
         const val Transformation = "AES/GCM/NoPadding"
@@ -519,38 +657,5 @@ internal class CredentialStore(context: Context) {
         const val MaxAttempts = 5
         const val CooldownMillis = 30_000L
         const val UnknownBoot = -1
-        val DeviceAad = byteArrayOf(0x4d, 0x50, 0x4c, 0x01)
-
-        /**
-         * 同步同目录临时文件后原子替换凭据记录。
-         * @param destination 正式记录的路径
-         * @param encrypted 带 IV 和认证标签的密文
-         * @throws IOException 写入、同步或替换失败
-         */
-        fun replaceRecord(destination: File, encrypted: ByteArray) {
-            val pending = File(destination.path + ".new")
-            try {
-                FileOutputStream(pending).use { stream ->
-                    val output = DataOutputStream(stream)
-                    output.writeInt(FormatVersion)
-                    output.write(encrypted)
-                    output.flush()
-                    stream.fd.sync()
-                }
-                Files.move(
-                    pending.toPath(),
-                    destination.toPath(),
-                    StandardCopyOption.ATOMIC_MOVE,
-                    StandardCopyOption.REPLACE_EXISTING,
-                )
-            } catch (failure: IOException) {
-                try {
-                    Files.deleteIfExists(pending.toPath())
-                } catch (cleanupFailure: IOException) {
-                    failure.addSuppressed(cleanupFailure)
-                }
-                throw failure
-            }
-        }
     }
 }

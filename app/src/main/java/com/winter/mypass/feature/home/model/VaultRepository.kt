@@ -19,6 +19,12 @@ internal class VaultRepository(context: Context, private val defaultBookName: St
     )
 
     /**
+     * 预先加载数据库引擎，供输入密码期间并行准备。
+     * @throws UnsatisfiedLinkError 数据库原生库不可用
+     */
+    suspend fun prepare() = storage.prepare()
+
+    /**
      * 验证密钥，首次使用时初始化密码本，并确保内置类型存在。
      * @param key 从应用锁解出的数据库密钥
      */

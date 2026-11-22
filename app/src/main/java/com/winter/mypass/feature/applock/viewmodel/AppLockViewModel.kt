@@ -18,10 +18,12 @@ import com.winter.mypass.feature.home.model.VaultClipboard
 import com.winter.mypass.feature.home.model.VaultRepository
 import com.winter.mypass.feature.home.viewmodel.VaultViewModel
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
@@ -41,7 +43,15 @@ internal data class AppLockState(
     val busy: Boolean = false,
     val error: LockError? = null,
     val inputRevision: Int = 0,
+    val pinFeedback: PinFeedback = PinFeedback.None,
 )
+
+/**
+ * 由真实校验结果触发的 PIN 动画。
+ * @author Tingdong
+ * @date 2026-11-22
+ */
+internal enum class PinFeedback { None, Success, Incorrect }
 
 /**
  * 应用锁的入口阶段，不包含凭据或密钥。
@@ -108,8 +118,10 @@ internal class AppLockViewModel(
         }
     private var closing: Job? = null
     private var operation: Job? = null
+    private var pinFeedback: CompletableDeferred<Unit>? = null
     private var timeout: Job? = null
     private var backgroundDeadline: Long? = null
+    private val vaultPreparation = viewModelScope.async(Dispatchers.IO) { vault.prepare() }
     private val savingChange: Boolean
         get() = mutableChange.value?.let { it.busy && it.screen is LockScreen.Setup } == true
 
@@ -210,6 +222,17 @@ internal class AppLockViewModel(
                 }
             }
             else -> input.fill('\u0000')
+        }
+    }
+
+    /**
+     * 完成当前输入轮次的 PIN 验证动画。
+     * @param inputRevision 播放动画时绑定的输入轮次
+     */
+    fun finishPinFeedback(inputRevision: Int) {
+        val current = state.value
+        if (current.busy && current.inputRevision == inputRevision && current.pinFeedback != PinFeedback.None) {
+            pinFeedback?.complete(Unit)
         }
     }
 
@@ -428,6 +451,11 @@ internal class AppLockViewModel(
         action: suspend () -> CredentialStore.Result,
     ) {
         val current = state.value
+        val pinLength = (current.screen as? LockScreen.Locked)?.type?.pinLength ?: 0
+        val feedback = if (input != null && pinLength > 0) {
+            CompletableDeferred<Unit>()
+        } else null
+        pinFeedback = feedback
         mutableState.value = current.copy(busy = true, error = null, inputRevision = current.inputRevision + 1)
         val previous = operation
         operation = viewModelScope.launch(start = CoroutineStart.UNDISPATCHED) {
@@ -440,11 +468,20 @@ internal class AppLockViewModel(
                 input?.fill('\u0000')
                 when (result) {
                     CredentialStore.Result.Missing -> updateScreen(LockScreen.Choose)
-                    is CredentialStore.Result.Locked -> updateScreen(
-                        LockScreen.Locked(result.type, result.retryAt),
-                        LockError.Incorrect.takeIf { result.incorrect },
-                    )
-                    is CredentialStore.Result.Unlocked -> unlockVault(result.vaultKey)
+                    is CredentialStore.Result.Locked -> {
+                        if (result.incorrect && feedback != null) {
+                            mutableState.value = state.value.copy(pinFeedback = PinFeedback.Incorrect)
+                            feedback.await()
+                        }
+                        updateScreen(
+                            LockScreen.Locked(result.type, result.retryAt),
+                            LockError.Incorrect.takeIf { result.incorrect },
+                        )
+                    }
+                    is CredentialStore.Result.Unlocked -> {
+                        if (feedback != null) mutableState.value = state.value.copy(pinFeedback = PinFeedback.Success)
+                        unlockVault(result.vaultKey, feedback)
+                    }
                 }
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -454,6 +491,8 @@ internal class AppLockViewModel(
             } finally {
                 input?.fill('\u0000')
                 pendingKey?.fill(0)
+                feedback?.cancel()
+                if (pinFeedback === feedback) pinFeedback = null
             }
         }
     }
@@ -475,20 +514,21 @@ internal class AppLockViewModel(
     }
 
     /**
-     * 打开加密库并等待首页首次读取结束，再进入解锁会话。
+     * 在成功动画期间准备加密库和首页，完成后直接进入。
      * @param key 此次认证产生的临时密钥
+     * @param feedback 与首页准备并行播放的成功动画
      */
-    private suspend fun unlockVault(key: ByteArray) {
+    private suspend fun unlockVault(key: ByteArray, feedback: CompletableDeferred<Unit>?) {
         closing?.join()
+        var opened = false
         try {
+            vaultPreparation.await()
             vault.open(key)
+            opened = true
             key.fill(0)
-            try {
-                vaultModels[VaultViewModel::class].state.first { it.snapshot != null || it.problem != null }
-            } catch (failure: Throwable) {
-                closeVault()
-                throw failure
-            }
+            val home = vaultModels[VaultViewModel::class].state.first { it.snapshot != null || it.problem != null }
+            checkNotNull(home.snapshot) { "首页读取失败" }
+            feedback?.await()
             updateScreen(LockScreen.Unlocked)
         } catch (cancelled: CancellationException) {
             throw cancelled
@@ -498,6 +538,8 @@ internal class AppLockViewModel(
         } catch (failure: LinkageError) {
             currentCoroutineContext().ensureActive()
             reportVaultFailure(failure)
+        } finally {
+            if (opened && state.value.screen != LockScreen.Unlocked) closeVault()
         }
     }
 

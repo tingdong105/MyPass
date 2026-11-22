@@ -86,6 +86,7 @@ class MainActivity : ComponentActivity() {
                             onChooseAgain = appLock::chooseAgain,
                             onSubmit = appLock::submit,
                             onRetry = appLock::retry,
+                            onPinFeedbackFinished = appLock::finishPinFeedback,
                         )
                     }
                 }

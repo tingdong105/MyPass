@@ -13,6 +13,9 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import net.zetetic.database.DatabaseErrorHandler
+import net.zetetic.database.sqlcipher.SQLiteDatabase
+import net.zetetic.database.sqlcipher.SQLiteNotADatabaseException
 
 /**
  * Room 加密数据库会话，统一管理打开、访问与关闭。
@@ -44,6 +47,13 @@ class RoomUtils<T : RoomDatabase>(
     }
 
     /**
+     * 在输入密码期间预先加载数据库原生库。
+     * 使用示例：store.prepare()
+     * @throws UnsatisfiedLinkError 原生库缺失或不支持当前设备
+     */
+    suspend fun prepare() = withContext(Dispatchers.IO) { loadSqlCipher() }
+
+    /**
      * 在 IO 线程打开数据库并验证密钥和迁移。
      * 使用示例：try { store.open(vaultKey) } finally { vaultKey.fill(0) }
      * @param key 随机生成或经安全派生的 32 字节密钥，调用期间不得修改，调用方负责清理原数组
@@ -55,19 +65,17 @@ class RoomUtils<T : RoomDatabase>(
         require(key.size == 32) { "数据库密钥必须为 32 字节，请勿直接使用主密码" }
         mutex.withLock {
             check(database == null) { "数据库已打开，请先关闭再解锁" }
-            val ownedKey = key.copyOf()
+            val ownedKey = rawKey(key)
             var candidate: T? = null
             try {
                 withContext(Dispatchers.IO) {
                     loadSqlCipher()
-                    val opened = Room.databaseBuilder(applicationContext, databaseClass, name)
-                        .openHelperFactory(SqlCipherOpenHelperFactory(ownedKey))
-                        .addMigrations(*migrations)
-                        .build()
-                    candidate = opened
-                    // Room 默认惰性打开，此处立即验证密钥及表结构。
-                    opened.openHelper.writableDatabase.query("SELECT count(*) FROM sqlite_master").use {
-                        check(it.moveToFirst()) { "数据库校验失败" }
+                    try {
+                        candidate = buildDatabase(ownedKey).also { validateDatabase(it) }
+                    } catch (_: SQLiteNotADatabaseException) {
+                        // 旧版将随机密钥当作口令，首次解锁时转换为直接密钥。
+                        migrateKey(key, ownedKey)
+                        candidate = buildDatabase(ownedKey).also { validateDatabase(it) }
                     }
                 }
                 currentCoroutineContext().ensureActive()
@@ -83,6 +91,82 @@ class RoomUtils<T : RoomDatabase>(
                 }
                 throw failure
             }
+        }
+    }
+
+    /**
+     * 构造使用直接密钥的 Room 实例。
+     * 使用示例：val opened = buildDatabase(encodedKey)
+     * @param key SQLCipher 直接密钥格式的字节数组
+     * @return 尚未打开的数据库
+     */
+    private fun buildDatabase(key: ByteArray): T =
+        Room.databaseBuilder(applicationContext, databaseClass, name)
+            .openHelperFactory(SqlCipherOpenHelperFactory(key))
+            .addMigrations(*migrations)
+            .build()
+
+    /**
+     * 立即验证惰性连接，失败时关闭实例并保留原始文件。
+     * 使用示例：validateDatabase(opened)
+     * @param opened 待打开的 Room 数据库
+     * @throws android.database.sqlite.SQLiteException 密钥错误或数据库无法读取
+     */
+    private fun validateDatabase(opened: T) {
+        try {
+            opened.openHelper.writableDatabase.query("SELECT count(*) FROM sqlite_master").use {
+                check(it.moveToFirst()) { "数据库校验失败" }
+            }
+        } catch (failure: Throwable) {
+            try {
+                opened.close()
+            } catch (closeFailure: Throwable) {
+                failure.addSuppressed(closeFailure)
+            }
+            throw failure
+        }
+    }
+
+    /**
+     * 用旧口令打开现有数据库并原子重加密为直接密钥。
+     * 使用示例：migrateKey(legacyKey, encodedKey)
+     * @param legacyKey 旧版使用的随机口令
+     * @param key SQLCipher 直接密钥格式的字节数组
+     * @throws android.database.sqlite.SQLiteException 旧密钥无效或转换失败
+     */
+    private fun migrateKey(legacyKey: ByteArray, key: ByteArray) {
+        SQLiteDatabase.openDatabase(
+            applicationContext.getDatabasePath(name).path,
+            legacyKey,
+            null,
+            SQLiteDatabase.OPEN_READWRITE,
+            DatabaseErrorHandler { _, error -> throw error },
+            null,
+        ).use { legacy ->
+            legacy.changePassword(key)
+            legacy.rawQuery("SELECT count(*) FROM sqlite_master", emptyArray()).use {
+                check(it.moveToFirst()) { "数据库密钥转换失败" }
+            }
+        }
+    }
+
+    /**
+     * 将随机密钥编码为 SQLCipher 的直接密钥，避免重复派生。
+     * 使用示例：val encoded = rawKey(vaultKey)
+     * @param key 32 字节随机密钥
+     * @return 由会话负责清除的 ASCII 密钥数组
+     */
+    private fun rawKey(key: ByteArray): ByteArray {
+        val digits = "0123456789abcdef"
+        return ByteArray(3 + key.size * 2).apply {
+            this[0] = 'x'.code.toByte()
+            this[1] = '\''.code.toByte()
+            key.forEachIndexed { index, byte ->
+                val value = byte.toInt() and 0xff
+                this[2 + index * 2] = digits[value ushr 4].code.toByte()
+                this[3 + index * 2] = digits[value and 0xf].code.toByte()
+            }
+            this[lastIndex] = '\''.code.toByte()
         }
     }
 

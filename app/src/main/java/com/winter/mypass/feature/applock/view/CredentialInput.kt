@@ -1,10 +1,12 @@
 package com.winter.mypass.feature.applock.view
 
+import android.animation.ValueAnimator
 import android.view.HapticFeedbackConstants
 import androidx.annotation.StringRes
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.keyframes
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -23,10 +25,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
@@ -39,7 +43,10 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.winter.mypass.R
 import com.winter.mypass.feature.applock.model.CredentialType
+import com.winter.mypass.feature.applock.viewmodel.PinFeedback
+import com.winter.mypass.ui.theme.LocalDarkTheme
 import com.winter.mypass.ui.theme.Theme
+import kotlinx.coroutines.delay
 import top.yukonga.miuix.kmp.basic.Button
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Icon
@@ -55,6 +62,9 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
  * @param inputRevision 当前输入轮次
  * @param showCompletion 是否在验证或切页期间保留输满反馈
  * @param onSubmit 提交 PIN 字符数组
+ * @param verifying 是否保留输满的圆点等待校验
+ * @param feedback 真实校验结果对应的动画
+ * @param onVerificationFinished 成功波浪或错误抖动结束后的通知
  */
 @Composable
 internal fun PinInput(
@@ -63,16 +73,31 @@ internal fun PinInput(
     inputRevision: Int,
     showCompletion: Boolean,
     onSubmit: (CharArray) -> Unit,
+    verifying: Boolean = false,
+    feedback: PinFeedback = PinFeedback.None,
+    onVerificationFinished: () -> Unit = {},
 ) {
     val view = LocalView.current
     val digits = remember(length, inputRevision) { CharArray(length) }
     var count by remember(digits) { mutableIntStateOf(0) }
     var completed by remember(length) { mutableStateOf(false) }
+    val shake = remember { Animatable(0f) }
+    val finished by rememberUpdatedState(onVerificationFinished)
+    val shakeWidth = Theme.spacing.small
     DisposableEffect(digits) {
         onDispose { digits.fill('\u0000') }
     }
     LaunchedEffect(inputRevision, showCompletion) {
         if (!showCompletion) completed = false
+    }
+    LaunchedEffect(feedback) {
+        shake.snapTo(0f)
+        if (feedback == PinFeedback.Incorrect) {
+            if (ValueAnimator.areAnimatorsEnabled()) {
+                shake.animateTo(0f, PinFeedbackStyle.errorShake)
+            }
+            finished()
+        }
     }
 
     val append: (Char) -> Unit = { digit ->
@@ -87,7 +112,7 @@ internal fun PinInput(
             }
         }
     }
-    val filledCount = if (showCompletion && completed) length else count
+    val filledCount = if (verifying || (showCompletion && completed)) length else count
     val progress = stringResource(R.string.lock_pin_progress, filledCount, length)
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -95,10 +120,17 @@ internal fun PinInput(
     ) {
         Row(
             horizontalArrangement = Arrangement.spacedBy(Theme.spacing.medium),
-            modifier = Modifier.semantics { contentDescription = progress },
+            modifier = Modifier
+                .graphicsLayer { translationX = shake.value * shakeWidth.toPx() }
+                .semantics { contentDescription = progress },
         ) {
             repeat(length) { index ->
-                PinDot(filled = index < filledCount)
+                PinDot(
+                    filled = index < filledCount,
+                    verificationIndex = index.takeIf { feedback == PinFeedback.Success },
+                    incorrect = feedback == PinFeedback.Incorrect,
+                    onVerificationFinished = { if (index == length - 1) onVerificationFinished() },
+                )
             }
         }
         Column(verticalArrangement = Arrangement.spacedBy(Theme.spacing.small)) {
@@ -125,41 +157,102 @@ internal fun PinInput(
 }
 
 /**
- * 输入时让掩码圆点着色、压扁并弹起回落。
+ * 圆点蓄力压扁、起跳拉伸，落地后二次轻弹。
  * @param filled 是否已经输入这一位
+ * @param verificationIndex 验证波浪中的位置，空值表示普通输入
+ * @param incorrect 是否显示错误颜色
+ * @param onVerificationFinished 当前圆点的验证动画结束通知
  */
 @Composable
-private fun PinDot(filled: Boolean) {
-    val displacement = remember { Animatable(0f) }
+private fun PinDot(filled: Boolean, verificationIndex: Int?, incorrect: Boolean, onVerificationFinished: () -> Unit) {
+    val bounce = remember { Animatable(0f) }
+    var highlighted by remember { mutableStateOf(false) }
+    val finished by rememberUpdatedState(onVerificationFinished)
+    val verificationColor = if (LocalDarkTheme.current) PinFeedbackStyle.darkGreen else PinFeedbackStyle.lightGreen
+    val liftHeight = Theme.spacing.small
     val color = animateColorAsState(
-        targetValue = if (filled) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.disabledPrimary,
-        animationSpec = tween(120),
+        targetValue = when {
+            incorrect -> MiuixTheme.colorScheme.error
+            highlighted -> verificationColor
+            filled -> MiuixTheme.colorScheme.primary
+            else -> MiuixTheme.colorScheme.disabledPrimary
+        },
+        animationSpec = tween(200, easing = FastOutSlowInEasing),
         label = "PIN dot color",
     )
-    LaunchedEffect(filled) {
-        if (filled) {
-            displacement.animateTo(-0.30f, tween(45))
-            displacement.animateTo(
-                targetValue = 0f,
-                animationSpec = spring(dampingRatio = 0.40f, stiffness = 500f),
-                initialVelocity = 30f,
-            )
+    LaunchedEffect(filled, verificationIndex, incorrect) {
+        highlighted = false
+        if (incorrect) {
+            bounce.animateTo(0f, tween(80))
+        } else if (verificationIndex != null) {
+            if (ValueAnimator.areAnimatorsEnabled()) {
+                if (bounce.value != 0f) bounce.animateTo(0f, tween(90, easing = FastOutSlowInEasing))
+                delay(verificationIndex * PinFeedbackStyle.stepMillis)
+                highlighted = true
+                bounce.animateTo(0f, PinFeedbackStyle.successBounce)
+                delay(PinFeedbackStyle.successRestMillis)
+            } else {
+                highlighted = true
+            }
+            finished()
+        } else if (filled) {
+            bounce.animateTo(0f, PinFeedbackStyle.inputBounce)
         } else {
-            displacement.animateTo(0f, tween(100))
+            bounce.animateTo(0f, tween(90))
         }
     }
     Box(
         Modifier
             .size(12.dp)
             .graphicsLayer {
-                val offset = displacement.value
-                val stretch = 1f + 0.44f * offset
-                translationY = -5.dp.toPx() * offset
+                val lift = bounce.value.coerceAtLeast(0f)
+                val compression = bounce.value.coerceAtMost(0f)
+                val stretch = 1f + 0.10f * lift + 0.65f * compression
+                translationY = -liftHeight.toPx() * lift
                 scaleX = 1f / stretch
                 scaleY = stretch
             }
             .drawBehind { drawCircle(color.value) },
     )
+}
+
+/**
+ * PIN 反馈的局部配色、弹性曲线与错峰节奏。
+ * @author Tingdong
+ * @date 2026-11-22
+ */
+private object PinFeedbackStyle {
+    val lightGreen = Color(0xFF168A4A)
+    val darkGreen = Color(0xFF76D995)
+    const val stepMillis = 78L
+    const val successRestMillis = 70L
+    val inputBounce = keyframes {
+        durationMillis = 360
+        -0.14f at 42 using FastOutSlowInEasing
+        0.58f at 128 using FastOutSlowInEasing
+        -0.09f at 226 using FastOutSlowInEasing
+        0.08f at 288 using FastOutSlowInEasing
+        0f at 360
+    }
+    val successBounce = keyframes {
+        durationMillis = 500
+        0f at 0 using FastOutSlowInEasing
+        -0.16f at 54 using FastOutSlowInEasing
+        0.85f at 160 using FastOutSlowInEasing
+        -0.12f at 298 using FastOutSlowInEasing
+        0.14f at 386 using FastOutSlowInEasing
+        0f at 500
+    }
+    val errorShake = keyframes {
+        durationMillis = 320
+        0f at 0 using FastOutSlowInEasing
+        -0.85f at 45 using FastOutSlowInEasing
+        0.65f at 105 using FastOutSlowInEasing
+        -0.42f at 165 using FastOutSlowInEasing
+        0.22f at 220 using FastOutSlowInEasing
+        -0.08f at 270 using FastOutSlowInEasing
+        0f at 320
+    }
 }
 
 /**
