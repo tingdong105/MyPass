@@ -15,7 +15,7 @@ internal class VaultRepository(context: Context, private val defaultBookName: St
 
     private val storage = RoomUtils(
         context, VaultDatabase::class.java, DatabaseName,
-        VaultMigration1To2, VaultMigration2To3, VaultMigration3To4, VaultMigration4To5,
+        VaultMigration1To2, VaultMigration2To3, VaultMigration3To4, VaultMigration4To5, VaultMigration5To6,
     )
 
     /**
@@ -31,6 +31,7 @@ internal class VaultRepository(context: Context, private val defaultBookName: St
                     dao.insertBook(VaultBook(name = defaultBookName, createdAt = System.currentTimeMillis()))
                 }
                 dao.ensureBuiltInTypes()
+                dao.purgeExpiredTrash()
             }
         } catch (failure: Throwable) {
             try {
@@ -116,11 +117,13 @@ internal class VaultRepository(context: Context, private val defaultBookName: St
     /**
      * 在打开详情时读取一条完整记录。
      * @param id 记录标识
+     * @param trashed 是否读取回收站中的记录
      * @return 当前记录及所属分类
      */
-    suspend fun detail(id: Long): PasswordDraft = storage.transaction {
+    suspend fun detail(id: Long, trashed: Boolean = false): PasswordDraft = storage.transaction {
         val dao = vaultDao()
-        val entry = dao.entry(id) ?: throw VaultException(VaultProblem.Missing)
+        val entry = dao.entry(id)?.takeIf { (it.deletedAt != null) == trashed }
+            ?: throw VaultException(VaultProblem.Missing)
         PasswordDraft(
             bookId = entry.bookId,
             id = entry.id,
@@ -160,14 +163,13 @@ internal class VaultRepository(context: Context, private val defaultBookName: St
             }
             val account = draft.account.trim().ifEmpty { null }
             val existing = draft.id?.let { dao.entry(it) ?: throw VaultException(VaultProblem.Missing) }
-            val identityChanged = existing == null || existing.bookId != draft.bookId ||
-                !existing.platform.equals(platform, ignoreCase = true) ||
-                !existing.account.orEmpty().equals(account.orEmpty(), ignoreCase = true)
-            if (!allowDuplicate && identityChanged && dao.summaries(draft.bookId, includePassword = false).any {
-                    it.id != draft.id && it.platform.equals(platform, ignoreCase = true) &&
-                        it.account.orEmpty().equals(account.orEmpty(), ignoreCase = true)
-                }
-            ) throw VaultException(VaultProblem.DuplicatePassword)
+            val identity = PasswordIdentity(draft.bookId, platform, account)
+            val previous = existing?.let { PasswordIdentity(it.bookId, it.platform, it.account) }
+            if (!allowDuplicate && previous?.compareTo(identity) != 0 &&
+                dao.passwordIdentities(draft.bookId, draft.id).any { it.compareTo(identity) == 0 }
+            ) {
+                throw VaultException(VaultProblem.DuplicatePassword)
+            }
 
             val now = System.currentTimeMillis()
             val value = VaultPassword(
@@ -182,6 +184,7 @@ internal class VaultRepository(context: Context, private val defaultBookName: St
                 typeId = draft.typeId,
                 createdAt = existing?.createdAt ?: now,
                 updatedAt = now,
+                deletedAt = existing?.deletedAt,
             )
             val id = if (existing == null) dao.insertPassword(value) else {
                 dao.updatePassword(value)
@@ -193,7 +196,7 @@ internal class VaultRepository(context: Context, private val defaultBookName: St
         }
 
     /**
-     * 删除指定记录并读取更新后的快照。
+     * 将指定记录移入回收站并读取更新后的快照。
      * @param id 记录标识
      * @param bookId 当前密码本
      * @param preview 列表密码预览设置
@@ -201,12 +204,12 @@ internal class VaultRepository(context: Context, private val defaultBookName: St
      */
     suspend fun deletePassword(id: Long, bookId: Long, preview: PasswordPreviewSettings): VaultSnapshot = storage.transaction {
         val dao = vaultDao()
-        dao.deletePassword(id)
+        dao.deletePassword(id, System.currentTimeMillis())
         dao.snapshot(bookId, preview)
     }
 
     /**
-     * 在同一事务中批量删除当前本内的密码并刷新计数。
+     * 在同一事务中批量将当前本内的密码移入回收站并刷新计数。
      * @param ids 待删除的记录标识
      * @param bookId 当前密码本
      * @param preview 列表密码预览设置
@@ -215,9 +218,88 @@ internal class VaultRepository(context: Context, private val defaultBookName: St
     suspend fun deletePasswords(ids: Set<Long>, bookId: Long, preview: PasswordPreviewSettings): VaultSnapshot =
         storage.transaction {
             val dao = vaultDao()
-            for (batch in ids.chunked(500)) dao.deletePasswords(bookId, batch)
+            val deletedAt = System.currentTimeMillis()
+            for (batch in ids.chunked(500)) dao.deletePasswords(bookId, batch, deletedAt)
             dao.snapshot(bookId, preview)
         }
+
+    /**
+     * 读取全部密码本的回收站记录。
+     * @param bookId 当前密码本
+     * @param preview 列表密码预览设置
+     * @return 回收站内容与最新列表快照
+     */
+    suspend fun trash(bookId: Long, preview: PasswordPreviewSettings): VaultTrash = storage.transaction {
+        val dao = vaultDao()
+        dao.purgeExpiredTrash()
+        VaultTrash(dao.snapshot(bookId, preview), dao.trashed())
+    }
+
+    /**
+     * 在同一事务中恢复选中的回收站记录。
+     * @param ids 待恢复的记录标识
+     * @param bookId 当前密码本
+     * @param preview 列表密码预览设置
+     * @param allowDuplicate 用户已确认保留重复条目
+     * @return 回收站内容与最新列表快照
+     * @throws VaultException 恢复会产生未经确认的重复记录
+     */
+    suspend fun restorePasswords(
+        ids: Set<Long>,
+        bookId: Long,
+        preview: PasswordPreviewSettings,
+        allowDuplicate: Boolean,
+    ): VaultTrash = storage.transaction {
+        val dao = vaultDao()
+        dao.purgeExpiredTrash()
+        val batches = ids.chunked(500)
+        if (!allowDuplicate) {
+            val byBook = batches.flatMap { dao.trashedIdentities(it) }.groupBy(PasswordIdentity::bookId)
+            for ((sourceBook, restoring) in byBook) {
+                val identities = dao.passwordIdentities(sourceBook).toCollection(sortedSetOf())
+                if (restoring.any { !identities.add(it) }) throw VaultException(VaultProblem.DuplicatePassword)
+            }
+        }
+        for (batch in batches) dao.restorePasswords(batch)
+        VaultTrash(dao.snapshot(bookId, preview), dao.trashed())
+    }
+
+    /**
+     * 在当前事务内清理超过保留期的记录及其标签关联。
+     * @receiver 当前事务中的 DAO
+     */
+    private suspend fun VaultDao.purgeExpiredTrash() {
+        purgeTrash(System.currentTimeMillis() - TrashRetentionMillis)
+    }
+
+    /**
+     * 在同一事务中永久删除选中的回收站记录。
+     * @param ids 待删除的记录标识
+     * @param bookId 当前密码本
+     * @param preview 列表密码预览设置
+     * @return 回收站内容与最新列表快照
+     */
+    suspend fun purgePasswords(
+        ids: Set<Long>,
+        bookId: Long,
+        preview: PasswordPreviewSettings,
+    ): VaultTrash = storage.transaction {
+        val dao = vaultDao()
+        for (batch in ids.chunked(500)) dao.purgePasswords(batch)
+        VaultTrash(dao.snapshot(bookId, preview), dao.trashed())
+    }
+
+    /**
+     * 清空回收站并刷新列表快照。
+     * @param bookId 当前密码本
+     * @param preview 列表密码预览设置
+     * @return 回收站内容与最新列表快照
+     */
+    suspend fun clearTrash(bookId: Long, preview: PasswordPreviewSettings): VaultTrash = storage.transaction {
+        val dao = vaultDao()
+        dao.clearTrash()
+        VaultTrash(dao.snapshot(bookId, preview), dao.trashed())
+    }
 
     /**
      * 新建或重命名分类，同类名称按忽略大小写校验。
@@ -285,6 +367,7 @@ internal class VaultRepository(context: Context, private val defaultBookName: St
                 val books = dao.books()
                 val book = books.firstOrNull { it.id == id } ?: throw VaultException(VaultProblem.Missing)
                 if (book.entryCount > 0) throw VaultException(VaultProblem.BookNotEmpty)
+                if (dao.trashedCount(id) > 0) throw VaultException(VaultProblem.BookHasTrash)
                 if (books.size == 1) throw VaultException(VaultProblem.LastBook)
                 dao.deleteBook(id)
             }
@@ -354,6 +437,7 @@ internal class VaultRepository(context: Context, private val defaultBookName: St
             data.tags.forEach { insertTag(it) }
             data.passwords.forEach { insertPassword(it) }
             insertPasswordTags(data.links)
+            purgeExpiredTrash()
             data.history.forEach { insertGeneratedPasswordCopy(it) }
             ensureBuiltInTypes()
         }
@@ -361,6 +445,9 @@ internal class VaultRepository(context: Context, private val defaultBookName: St
 
     companion object {
         const val DatabaseName = "vault.db"
+
+        /** 回收站保留时长：30 天。 */
+        private const val TrashRetentionMillis = 30L * 24 * 60 * 60 * 1000
 
         private val BuiltInTypes = listOf(
             BuiltInType("software", R.string.vault_builtin_software, legacy = "APP"),

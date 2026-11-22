@@ -130,6 +130,7 @@
     <string name="vault_name_duplicate">这个名称已经存在</string>
     <string name="vault_last_book">请至少保留一本密码本。</string>
     <string name="vault_book_not_empty">请先移动或删除本内的密码，再删除密码本。</string>
+    <string name="vault_book_has_trash">回收站中还有本内的密码，请先恢复或永久删除。</string>
     <string name="vault_required">请填写必填项。</string>
     <string name="vault_invalid_url">请输入有效的 HTTP 或 HTTPS 网址。</string>
     <string name="vault_missing">这条记录已不存在。</string>
@@ -167,6 +168,24 @@
     </plurals>
     <plurals name="vault_delete_passwords_summary">
         <item quantity="other">确定删除选中的 %d 条密码？</item>
+    </plurals>
+    <string name="vault_trash">回收站</string>
+    <string name="vault_trash_empty">回收站是空的</string>
+    <string name="vault_restore">恢复</string>
+    <string name="vault_trash_restore_duplicate">恢复后，同一密码本会有平台和账号相同的记录。仍要恢复吗？</string>
+    <string name="vault_trash_deleted_info">删除于 %1$s</string>
+    <string name="vault_trash_deleted_at">删除时间</string>
+    <string name="vault_trash_clear_selection">退出多选</string>
+    <string name="vault_trash_delete_title">永久删除</string>
+    <string name="vault_trash_clear">清空回收站</string>
+    <plurals name="vault_trash_selected">
+        <item quantity="other">已选 %d 条</item>
+    </plurals>
+    <plurals name="vault_trash_delete_summary">
+        <item quantity="other">确定永久删除选中的 %d 条密码？将无法恢复。</item>
+    </plurals>
+    <plurals name="vault_trash_clear_summary">
+        <item quantity="other">确定永久删除回收站中的 %d 条密码？将无法恢复。</item>
     </plurals>
     <string name="backup_title">备份与还原</string>
     <string name="backup_config">云端配置</string>

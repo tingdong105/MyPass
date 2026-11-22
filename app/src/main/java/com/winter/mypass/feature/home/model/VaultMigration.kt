@@ -66,6 +66,17 @@ internal val VaultMigration4To5 = object : Migration(4, 5) {
     }
 }
 
+/** 为密码记录增加回收站时间，未删除时为空。 */
+internal val VaultMigration5To6 = object : Migration(5, 6) {
+    /**
+     * 新增可空的删除时间列，已有记录保持正常可见。
+     * @param db 当前加密数据库
+     */
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE vault_passwords ADD COLUMN deletedAt INTEGER")
+    }
+}
+
 /**
  * 将旧版 entries 结构复制到 v2 表，先移除旧关联表再移除其父表。
  * @receiver 迁移事务中的数据库

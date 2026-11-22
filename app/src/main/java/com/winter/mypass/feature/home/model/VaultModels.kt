@@ -65,6 +65,47 @@ internal data class PasswordSummary(
 }
 
 /**
+ * 用于比较同一密码本内的记录身份。
+ * @author Tingdong
+ * @date 2026-11-22
+ */
+internal class PasswordIdentity(
+    val bookId: Long,
+    val platform: String,
+    val account: String?,
+) : Comparable<PasswordIdentity> {
+    /**
+     * 按密码本、平台和账号比较，平台和账号忽略大小写。
+     * @param other 要比较的记录身份
+     * @return 顺序值，相同身份返回零
+     */
+    override fun compareTo(other: PasswordIdentity): Int {
+        val byBook = bookId.compareTo(other.bookId)
+        if (byBook != 0) return byBook
+        val byPlatform = platform.compareTo(other.platform, ignoreCase = true)
+        return if (byPlatform != 0) byPlatform else account.orEmpty().compareTo(other.account.orEmpty(), ignoreCase = true)
+    }
+}
+
+/**
+ * 回收站中的一条密码摘要。
+ * @author Tingdong
+ * @date 2026-11-22
+ */
+internal data class TrashEntry(
+    val id: Long,
+    val platform: String,
+    val typeId: Long?,
+    val deletedAt: Long,
+) {
+    /**
+     * 调试输出只包含记录标识。
+     * @return 不含密码和账户信息的摘要
+     */
+    override fun toString(): String = "TrashEntry(id=$id)"
+}
+
+/**
  * 首页卡片的密码显示方式。
  * @author Tingdong
  * @date 2026-11-20
@@ -229,6 +270,16 @@ internal data class VaultSnapshot(
 }
 
 /**
+ * 回收站操作后的列表快照和最新回收站内容。
+ * @author Tingdong
+ * @date 2026-11-22
+ */
+internal data class VaultTrash(
+    val snapshot: VaultSnapshot,
+    val entries: List<TrashEntry>,
+)
+
+/**
  * 密码记录的排序维度。
  * @author Tingdong
  * @date 2026-11-19
@@ -248,7 +299,7 @@ internal data class VaultSort(val order: VaultOrder = VaultOrder.Updated, val re
  * @date 2026-11-19
  */
 internal enum class VaultProblem {
-    Storage, Required, InvalidWebsite, DuplicateCategory, DuplicatePassword, Missing, LastBook, BookNotEmpty, BuiltIn,
+    Storage, Required, InvalidWebsite, DuplicateCategory, DuplicatePassword, Missing, LastBook, BookNotEmpty, BookHasTrash, BuiltIn,
 }
 
 /**

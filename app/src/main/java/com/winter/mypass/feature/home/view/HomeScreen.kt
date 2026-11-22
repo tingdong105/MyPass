@@ -8,16 +8,11 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.EnterExitState
 import androidx.compose.animation.SizeTransform
-import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
@@ -66,7 +61,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -83,9 +77,7 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.ClipOp
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.drawscope.clipPath
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -103,15 +95,11 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.hideFromAccessibility
-import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.toggleableState
-import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -142,9 +130,6 @@ import com.winter.mypass.ui.theme.LocalDarkTheme
 import com.winter.mypass.ui.theme.MyPassTheme
 import com.winter.mypass.ui.theme.Theme
 import kotlinx.coroutines.launch
-import top.yukonga.miuix.kmp.basic.Card
-import top.yukonga.miuix.kmp.basic.CardDefaults
-import top.yukonga.miuix.kmp.basic.Checkbox
 import top.yukonga.miuix.kmp.basic.CircularProgressIndicator
 import top.yukonga.miuix.kmp.basic.FloatingActionButton
 import top.yukonga.miuix.kmp.basic.HorizontalDivider
@@ -167,14 +152,13 @@ import top.yukonga.miuix.kmp.icon.extended.Folder
 import top.yukonga.miuix.kmp.icon.extended.FolderFill
 import top.yukonga.miuix.kmp.icon.extended.Search
 import top.yukonga.miuix.kmp.theme.MiuixTheme
-import top.yukonga.miuix.kmp.utils.PressFeedbackType
 
 /**
  * 密码本导航使用独立的页面标识，草稿和搜索变化不触发转场。
  * @author Tingdong
  * @date 2026-11-19
  */
-private enum class Destination(val depth: Int) { Loading(0), Tabs(0), Catalog(1), GenerationHistory(1) }
+private enum class Destination(val depth: Int) { Loading(0), Tabs(0), Catalog(1), GenerationHistory(1), Trash(1) }
 
 /**
  * 根据当前状态确定转场的目的地。
@@ -184,6 +168,7 @@ private val VaultState.destination: Destination
     get() = if (snapshot == null) Destination.Loading else when (page) {
         is VaultPage.Categories -> Destination.Catalog
         is VaultPage.GenerationHistory -> Destination.GenerationHistory
+        is VaultPage.Trash -> Destination.Trash
         else -> Destination.Tabs
     }
 
@@ -197,15 +182,12 @@ internal fun VaultScreen(model: VaultViewModel, onBackup: () -> Unit, onChangeCr
     val state by model.state.collectAsStateWithLifecycle()
     val list = remember { LazyListState() }
     val focus = LocalFocusManager.current
-    val modalOpen = state.page is VaultPage.Editor || state.page is VaultPage.Detail
+    val modalOpen = state.page is VaultPage.Editor || state.detail != null
     LaunchedEffect(modalOpen) {
         if (modalOpen) focus.clearFocus(force = true)
     }
-    val sheetClosing = when (val page = state.page) {
-        is VaultPage.Detail -> page.phase != DetailPhase.Open
-        is VaultPage.Editor -> page.phase.isClosing
-        else -> false
-    }
+    val sheetClosing = state.detail?.let { it.phase != DetailPhase.Open } == true ||
+        (state.page as? VaultPage.Editor)?.phase?.isClosing == true
     BackHandler(enabled = sheetClosing) { }
     LaunchedEffect(state.snapshot?.bookId, state.query, state.sort) {
         if (state.snapshot != null) list.scrollToItem(0)
@@ -249,6 +231,40 @@ internal fun VaultScreen(model: VaultViewModel, onBackup: () -> Unit, onChangeCr
                     onCopy = model::copyFromGenerationHistory,
                     onDelete = model::deleteFromGenerationHistory,
                 )
+            } else if (page is VaultPage.Trash) {
+                val detail = page.detail
+                val confirmingRestore = page.pendingRestore != null
+                val detailContent: (@Composable () -> Unit)? = if (active && detail != null) {
+                    {
+                        PasswordDetailSheet(
+                            detail = detail,
+                            snapshot = snapshot,
+                            busy = screen.busy || confirmingRestore,
+                            problem = screen.problem,
+                            onDismiss = model::dismissPasswordDetail,
+                            onDismissFinished = model::finishPasswordDetailDismissal,
+                            onRestore = { detail.draft.id?.let { model.restoreFromTrash(setOf(it)) {} } },
+                            onCopy = model::copyText,
+                        )
+                    }
+                } else null
+                TrashScreen(
+                    entries = page.entries,
+                    types = snapshot.types,
+                    busy = screen.busy,
+                    problem = screen.problem,
+                    active = active,
+                    confirmingRestore = confirmingRestore,
+                    onBack = if (detail == null) model::closePage else model::dismissPasswordDetail,
+                    onRetry = model::loadTrash,
+                    onOpenDetail = model::openTrashDetail,
+                    onRestore = model::restoreFromTrash,
+                    onConfirmRestore = model::confirmTrashRestore,
+                    onDismissRestore = model::dismissTrashRestore,
+                    onDelete = model::deleteFromTrash,
+                    onEmpty = model::emptyTrash,
+                    detailContent = detailContent,
+                )
             } else {
                 VaultThemeLayers(
                     list = list,
@@ -271,6 +287,7 @@ internal fun VaultScreen(model: VaultViewModel, onBackup: () -> Unit, onChangeCr
                         onNavigationSettings = model::setNavigationSettings,
                         onChangeCredential = onChangeCredential,
                         onBackup = onBackup,
+                        onTrash = model::openTrash,
                         onClear = model::clearProblem,
                         onOpen = model::openDetail,
                         onAdd = model::newPassword,
@@ -449,6 +466,8 @@ private fun VaultThemeLayers(
  * @param onPasswordPreview 修改密码预览设置
  * @param onNavigationSettings 修改底栏样式偏好
  * @param onChangeCredential 打开启动密码修改页
+ * @param onBackup 打开备份页
+ * @param onTrash 打开回收站
  * @param onClear 清除错误反馈
  * @param onOpen 查看一条记录
  * @param onAdd 新建记录
@@ -480,6 +499,7 @@ private fun VaultTopLevel(
     onNavigationSettings: ((VaultNavigationSettings) -> VaultNavigationSettings) -> Unit,
     onChangeCredential: () -> Unit,
     onBackup: () -> Unit,
+    onTrash: () -> Unit,
     onClear: () -> Unit,
     onOpen: (Long) -> Unit,
     onAdd: (String) -> Unit,
@@ -679,7 +699,7 @@ private fun VaultTopLevel(
                             VaultErrorText(state.problem)
                             VaultSettings(
                                 state.passwordPreview, state.navigation, state.busy, onPasswordPreview,
-                                onNavigationSettings, onChangeCredential, onBackup, onManage,
+                                onNavigationSettings, onChangeCredential, onBackup, onTrash, onManage,
                                 onPopupVisibility = { settingsPopupOpen = it },
                             )
                         }
@@ -982,80 +1002,31 @@ private fun PasswordListCard(
     onOpen: () -> Unit,
     onSelect: () -> Unit,
 ) {
-    val colors = MiuixTheme.colorScheme
-    val view = LocalView.current
-    val background by key(LocalDarkTheme.current) {
-        animateColorAsState(
-            if (checked) colors.primary.copy(alpha = 0.12f).compositeOver(colors.surfaceContainer) else colors.surfaceContainer,
-            spring(dampingRatio = 0.9f, stiffness = 450f), label = "Password selection color",
-        )
-    }
-    val scale by animateFloatAsState(
-        if (checked) 0.98f else 1f,
-        spring(dampingRatio = 0.65f, stiffness = 450f), label = "Password selection scale",
-    )
-    Card(
-        modifier = modifier.fillMaxWidth()
-            .animateContentSize(spring(dampingRatio = 0.85f, stiffness = 450f))
-            .graphicsLayer { scaleX = scale; scaleY = scale }
-            .semantics(mergeDescendants = true) {
-                role = if (selecting) Role.Checkbox else Role.Button
-                if (selecting) toggleableState = if (checked) ToggleableState.On else ToggleableState.Off
-                if (!enabled) disabled()
-            },
-        insideMargin = PaddingValues(Theme.spacing.medium),
-        colors = CardDefaults.defaultColors(background, colors.onSurfaceContainer),
-        pressFeedbackType = PressFeedbackType.Sink,
-        showIndication = true,
-        onClick = if (enabled) {
-            {
-                if (selecting) {
-                    view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                    onSelect()
-                } else onOpen()
-            }
-        } else null,
-        onLongPress = if (enabled) onSelect else null,
+    VaultSelectableCard(
+        enabled = enabled,
+        selecting = selecting,
+        checked = checked,
+        modifier = modifier,
+        onOpen = onOpen,
+        onSelect = onSelect,
+        trailing = {
+            Icon(
+                MiuixIcons.ChevronForward, null, Modifier.size(Theme.spacing.medium),
+                tint = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            )
+        },
     ) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(Theme.spacing.medium),
-            verticalAlignment = Alignment.CenterVertically,
+        VaultGlyph(entry.platform, type)
+        Column(
+            Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(Theme.spacing.small / 2),
         ) {
-            VaultGlyph(entry.platform, type)
-            Column(
-                Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(Theme.spacing.small / 2),
-            ) {
-                Text(entry.platform, style = MiuixTheme.textStyles.title3, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(
-                    entry.passwordPreview.orEmpty(),
-                    style = MiuixTheme.textStyles.body1, fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Medium,
-                )
-            }
-            AnimatedContent(
-                targetState = selecting,
-                modifier = Modifier.clearAndSetSemantics { },
-                transitionSpec = {
-                    (scaleIn(spring(dampingRatio = 0.65f, stiffness = 500f), initialScale = 0.65f) + fadeIn(tween(100)))
-                        .togetherWith(scaleOut(tween(90), targetScale = 0.65f) + fadeOut(tween(90)))
-                        .using(SizeTransform(clip = false) { _, _ -> spring(dampingRatio = 0.85f, stiffness = 450f) })
-                },
-                label = "Password selection indicator",
-            ) { selectionMode ->
-                if (selectionMode) {
-                    key(LocalDarkTheme.current) {
-                        Checkbox(
-                            if (checked) ToggleableState.On else ToggleableState.Off,
-                            onClick = null, enabled = enabled,
-                        )
-                    }
-                } else Icon(
-                    MiuixIcons.ChevronForward, null, Modifier.size(Theme.spacing.medium),
-                    tint = colors.onSurfaceVariantSummary,
-                )
-            }
+            Text(entry.platform, style = MiuixTheme.textStyles.title3, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                entry.passwordPreview.orEmpty(),
+                style = MiuixTheme.textStyles.body1, fontFamily = FontFamily.Monospace,
+                fontWeight = FontWeight.Medium,
+            )
         }
     }
 }
@@ -1202,7 +1173,7 @@ internal fun VaultTabbedPreview(state: VaultState, showDrawer: Boolean = false) 
                 workspace = workspace, themeToggle = themeToggle, emptyPlayback = emptyPlayback, outgoing = outgoing,
                 onTab = {}, onBook = {}, onManage = {}, onQuery = {}, onSort = {}, onPasswordPreview = {},
                 onNavigationSettings = {},
-                onChangeCredential = {}, onBackup = {}, onClear = {}, onOpen = {}, onAdd = {}, onGeneratorOptions = {},
+                onChangeCredential = {}, onBackup = {}, onTrash = {}, onClear = {}, onOpen = {}, onAdd = {}, onGeneratorOptions = {},
                 onRefreshGenerated = {}, onCopyGenerated = { _, _ -> }, onOpenGenerationHistory = {},
                 onToggleSelection = {}, onClearSelection = {}, onDeleteSelected = {},
             )

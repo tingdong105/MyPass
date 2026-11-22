@@ -42,6 +42,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
@@ -91,6 +92,7 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
  * @param onEdit 进入编辑
  * @param onDelete 删除当前记录
  * @param onCopy 复制内容，按需通知成功
+ * @param onRestore 恢复回收站中的记录
  */
 @Composable
 internal fun PasswordDetailSheet(
@@ -100,9 +102,10 @@ internal fun PasswordDetailSheet(
     problem: VaultProblem?,
     onDismiss: () -> Unit,
     onDismissFinished: () -> Unit,
-    onEdit: () -> Unit,
-    onDelete: () -> Unit,
+    onEdit: (() -> Unit)? = null,
+    onDelete: (() -> Unit)? = null,
     onCopy: (String, Boolean, (() -> Unit)?) -> Unit,
+    onRestore: (() -> Unit)? = null,
 ) {
     val entry = detail.draft
     val open = detail.phase == DetailPhase.Open
@@ -125,18 +128,29 @@ internal fun PasswordDetailSheet(
         onDismissFinished = onDismissFinished,
     ) {
         PasswordDetailContent(
-            entry, snapshot, enabled, problem, onDismiss, onEdit, { deleting = true }, onCopy,
+            entry = entry,
+            snapshot = snapshot,
+            enabled = enabled,
+            problem = problem,
+            onDismiss = onDismiss,
+            onEdit = onEdit,
+            onRequestDelete = onDelete?.let { { deleting = true } },
+            onCopy = onCopy,
+            deletedAt = detail.deletedAt,
+            onRestore = onRestore,
         )
     }
 
-    VaultConfirm(
-        open && deleting, stringResource(R.string.vault_delete_record),
-        stringResource(R.string.vault_confirm_record, entry.platform), R.string.vault_delete,
-        onDismiss = { deleting = false }, onConfirm = {
-            deleting = false
-            onDelete()
-        },
-    )
+    if (onDelete != null) {
+        VaultConfirm(
+            open && deleting, stringResource(R.string.vault_delete_record),
+            stringResource(R.string.vault_confirm_record, entry.platform), R.string.vault_delete,
+            onDismiss = { deleting = false }, onConfirm = {
+                deleting = false
+                onDelete()
+            },
+        )
+    }
 }
 
 /**
@@ -149,6 +163,8 @@ internal fun PasswordDetailSheet(
  * @param onEdit 编辑记录
  * @param onRequestDelete 请求删除确认
  * @param onCopy 复制内容，按需通知成功
+ * @param deletedAt 回收站记录的删除时间
+ * @param onRestore 恢复回收站中的记录
  */
 @Composable
 private fun PasswordDetailContent(
@@ -157,9 +173,11 @@ private fun PasswordDetailContent(
     enabled: Boolean,
     problem: VaultProblem?,
     onDismiss: () -> Unit,
-    onEdit: () -> Unit,
-    onRequestDelete: () -> Unit,
+    onEdit: (() -> Unit)?,
+    onRequestDelete: (() -> Unit)?,
     onCopy: (String, Boolean, (() -> Unit)?) -> Unit,
+    deletedAt: Long? = null,
+    onRestore: (() -> Unit)? = null,
 ) {
     Column(
         Modifier.fillMaxWidth()
@@ -174,7 +192,13 @@ private fun PasswordDetailContent(
                 entry.platform, Modifier.weight(1f).padding(end = Theme.spacing.small).semantics { heading() },
                 style = MiuixTheme.textStyles.title3, maxLines = 2, overflow = TextOverflow.Ellipsis,
             )
-            VaultIcon(MiuixIcons.Edit, R.string.vault_edit, enabled, onClick = onEdit)
+            if (onEdit != null) VaultIcon(MiuixIcons.Edit, R.string.vault_edit, enabled, onClick = onEdit)
+            if (onRestore != null) {
+                TrashActionIcon(
+                    ImageVector.vectorResource(R.drawable.ic_vault_trash_restore),
+                    R.string.vault_restore, enabled = enabled, onClick = onRestore,
+                )
+            }
             VaultIcon(MiuixIcons.Close, R.string.vault_close, enabled, onClick = onDismiss)
         }
 
@@ -188,6 +212,7 @@ private fun PasswordDetailContent(
             val bookName = snapshot.books.firstOrNull { it.id == entry.bookId }?.name
             val typeName = snapshot.typeName(entry.typeId)
             val tags = snapshot.tags.filter { it.id in entry.tagIds }
+            val deletedTime = deletedAt?.let { trashDeletionTime(it) }
             val fields = listOf(
                 Triple(R.string.vault_account, MiuixIcons.Contacts, entry.account),
                 Triple(R.string.vault_website, MiuixIcons.Link, entry.website),
@@ -195,6 +220,11 @@ private fun PasswordDetailContent(
                 Triple(R.string.vault_notes, MiuixIcons.Notes, entry.notes),
                 Triple(R.string.vault_book, MiuixIcons.Folder, bookName),
                 Triple(R.string.vault_type, MiuixIcons.Layers, typeName),
+                Triple(
+                    R.string.vault_trash_deleted_at,
+                    ImageVector.vectorResource(R.drawable.ic_vault_trash_deleted_at),
+                    deletedTime,
+                ),
             ).filter { !it.third.isNullOrBlank() }
             VaultGroup {
                 fields.forEachIndexed { index, (label, icon, value) ->
@@ -210,15 +240,17 @@ private fun PasswordDetailContent(
                         onCopy(tags.joinToString("、") { it.name }, false, null)
                     }
                 }
-                if (fields.isNotEmpty() || tags.isNotEmpty()) DetailFieldDivider()
-                DetailListRow(
-                    label = R.string.vault_delete_record, icon = MiuixIcons.Delete,
-                    enabled = enabled, destructive = true, onClick = onRequestDelete,
-                ) {
-                    Icon(
-                        MiuixIcons.ChevronForward, null, Modifier.size(Theme.spacing.medium),
-                        tint = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                    )
+                if (onRequestDelete != null) {
+                    if (fields.isNotEmpty() || tags.isNotEmpty()) DetailFieldDivider()
+                    DetailListRow(
+                        label = R.string.vault_delete_record, icon = MiuixIcons.Delete,
+                        enabled = enabled, destructive = true, onClick = onRequestDelete,
+                    ) {
+                        Icon(
+                            MiuixIcons.ChevronForward, null, Modifier.size(Theme.spacing.medium),
+                            tint = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        )
+                    }
                 }
             }
         }

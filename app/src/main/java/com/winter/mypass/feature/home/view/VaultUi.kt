@@ -3,6 +3,18 @@ package com.winter.mypass.feature.home.view
 import android.content.res.Configuration
 import android.view.HapticFeedbackConstants
 import androidx.annotation.StringRes
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusGroup
@@ -30,10 +42,14 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalView
@@ -41,9 +57,14 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.hideFromAccessibility
 import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.toggleableState
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -52,10 +73,13 @@ import androidx.compose.ui.unit.dp
 import com.winter.mypass.R
 import com.winter.mypass.feature.home.model.VaultCategory
 import com.winter.mypass.feature.home.model.VaultProblem
+import com.winter.mypass.ui.theme.LocalDarkTheme
 import com.winter.mypass.ui.theme.Theme
 import top.yukonga.miuix.kmp.basic.BasicComponent
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
+import top.yukonga.miuix.kmp.basic.CardDefaults
+import top.yukonga.miuix.kmp.basic.Checkbox
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.RadioButton
@@ -69,6 +93,7 @@ import top.yukonga.miuix.kmp.icon.extended.ChevronForward
 import top.yukonga.miuix.kmp.icon.extended.Lock
 import top.yukonga.miuix.kmp.overlay.OverlayDialog
 import top.yukonga.miuix.kmp.theme.MiuixTheme
+import top.yukonga.miuix.kmp.utils.PressFeedbackType
 
 /**
  * 阻止键盘和无障碍焦点进入浮层背后的内容。
@@ -198,6 +223,100 @@ internal fun VaultSwitch(
 @Composable
 internal fun VaultGroup(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
     Card(modifier.fillMaxWidth(), insideMargin = PaddingValues(0.dp), content = content)
+}
+
+/**
+ * 在记录卡片上统一长按反馈和多选过渡。
+ * @param enabled 是否可交互
+ * @param selecting 是否处于多选模式
+ * @param checked 当前卡片是否已选中
+ * @param modifier 列表项修饰符
+ * @param onOpen 打开卡片详情
+ * @param onSelect 切换卡片选择
+ * @param scaleTrailing 普通模式的尾部内容是否随多选过渡缩放
+ * @param trailing 普通模式的尾部内容
+ * @param content 记录主体
+ */
+@Composable
+internal fun VaultSelectableCard(
+    enabled: Boolean,
+    selecting: Boolean,
+    checked: Boolean,
+    modifier: Modifier = Modifier,
+    onOpen: () -> Unit,
+    onSelect: () -> Unit,
+    scaleTrailing: Boolean = true,
+    trailing: @Composable () -> Unit,
+    content: @Composable RowScope.() -> Unit,
+) {
+    val colors = MiuixTheme.colorScheme
+    val view = LocalView.current
+    val toggleState = if (checked) ToggleableState.On else ToggleableState.Off
+    val background by key(LocalDarkTheme.current) {
+        animateColorAsState(
+            if (checked) colors.primary.copy(alpha = 0.12f).compositeOver(colors.surfaceContainer) else colors.surfaceContainer,
+            spring(dampingRatio = 0.9f, stiffness = 450f), label = "Card selection color",
+        )
+    }
+    val scale by animateFloatAsState(
+        if (checked) 0.98f else 1f,
+        spring(dampingRatio = 0.65f, stiffness = 450f), label = "Card selection scale",
+    )
+    Card(
+        modifier = modifier.fillMaxWidth()
+            .animateContentSize(spring(dampingRatio = 0.85f, stiffness = 450f))
+            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .semantics(mergeDescendants = true) {
+                role = if (selecting) Role.Checkbox else Role.Button
+                if (selecting) toggleableState = toggleState
+                if (!enabled) disabled()
+            },
+        insideMargin = PaddingValues(Theme.spacing.medium),
+        colors = CardDefaults.defaultColors(background, colors.onSurfaceContainer),
+        pressFeedbackType = PressFeedbackType.Sink,
+        showIndication = true,
+        onClick = if (!enabled) null else if (selecting) {
+            {
+                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                onSelect()
+            }
+        } else onOpen,
+        onLongPress = onSelect.takeIf { enabled },
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(Theme.spacing.medium),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            content()
+            AnimatedContent(
+                targetState = selecting,
+                contentAlignment = Alignment.CenterEnd,
+                transitionSpec = {
+                    val appear = fadeIn(tween(100))
+                    val disappear = fadeOut(tween(90))
+                    val enter = if (scaleTrailing || targetState) {
+                        scaleIn(spring(dampingRatio = 0.65f, stiffness = 500f), initialScale = 0.65f) + appear
+                    } else appear
+                    val exit = if (scaleTrailing || initialState) scaleOut(tween(90), targetScale = 0.65f) + disappear
+                    else disappear
+                    enter.togetherWith(exit)
+                        .using(SizeTransform(clip = false) { _, _ -> spring(dampingRatio = 0.85f, stiffness = 450f) })
+                },
+                label = "Card selection indicator",
+            ) { selectionMode ->
+                if (selectionMode) {
+                    key(LocalDarkTheme.current) {
+                        Box(Modifier.clearAndSetSemantics { }) {
+                            Checkbox(toggleState, onClick = null, enabled = enabled)
+                        }
+                    }
+                } else {
+                    Box(Modifier.semantics { if (selecting) hideFromAccessibility() }) { trailing() }
+                }
+            }
+        }
+    }
 }
 
 /**
@@ -401,6 +520,7 @@ internal fun VaultErrorText(problem: VaultProblem?) {
         VaultProblem.Missing -> R.string.vault_missing
         VaultProblem.LastBook -> R.string.vault_last_book
         VaultProblem.BookNotEmpty -> R.string.vault_book_not_empty
+        VaultProblem.BookHasTrash -> R.string.vault_book_has_trash
         VaultProblem.BuiltIn -> R.string.vault_built_in
     }
     Text(

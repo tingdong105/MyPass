@@ -84,6 +84,7 @@ import top.yukonga.miuix.kmp.icon.MiuixIcons
 import top.yukonga.miuix.kmp.icon.basic.Check
 import top.yukonga.miuix.kmp.icon.extended.Add
 import top.yukonga.miuix.kmp.icon.extended.Back
+import top.yukonga.miuix.kmp.icon.extended.Delete
 import top.yukonga.miuix.kmp.icon.extended.Folder
 import top.yukonga.miuix.kmp.icon.extended.Layers
 import top.yukonga.miuix.kmp.icon.extended.Lock
@@ -483,6 +484,7 @@ private fun CategoryRow(
  * @param onNavigationSettings 保存底栏样式偏好
  * @param onChangeCredential 打开启动密码修改页
  * @param onBackup 打开备份页
+ * @param onTrash 打开回收站
  * @param onManage 打开对应分类
  * @param onPopupVisibility 通知顶层是否正在显示设置弹层
  */
@@ -495,6 +497,7 @@ internal fun VaultSettings(
     onNavigationSettings: ((VaultNavigationSettings) -> VaultNavigationSettings) -> Unit,
     onChangeCredential: () -> Unit,
     onBackup: () -> Unit,
+    onTrash: () -> Unit,
     onManage: (CategoryKind) -> Unit,
     onPopupVisibility: (Boolean) -> Unit,
 ) {
@@ -514,6 +517,13 @@ internal fun VaultSettings(
             enabled = !busy,
             icon = MiuixIcons.UploadCloud,
             onClick = onBackup,
+        )
+        VaultRowDivider()
+        VaultLink(
+            stringResource(R.string.vault_trash),
+            enabled = !busy,
+            icon = MiuixIcons.Delete,
+            onClick = onTrash,
         )
         VaultRowDivider()
         VaultLink(

@@ -131,6 +131,7 @@
     <string name="vault_name_duplicate">This name is already in use</string>
     <string name="vault_last_book">Keep at least one vault.</string>
     <string name="vault_book_not_empty">Move or delete the entries in this vault before deleting it.</string>
+    <string name="vault_book_has_trash">This vault still has passwords in Trash. Restore or delete them permanently first.</string>
     <string name="vault_required">Fill in the required fields.</string>
     <string name="vault_invalid_url">Enter a valid HTTP or HTTPS URL.</string>
     <string name="vault_missing">This item is no longer available.</string>
@@ -173,6 +174,27 @@
     <plurals name="vault_delete_passwords_summary">
         <item quantity="one">Delete the %d selected password?</item>
         <item quantity="other">Delete the %d selected passwords?</item>
+    </plurals>
+    <string name="vault_trash">Trash</string>
+    <string name="vault_trash_empty">Trash is empty</string>
+    <string name="vault_restore">Restore</string>
+    <string name="vault_trash_restore_duplicate">Restoring will leave entries with the same platform and account in the same vault. Restore anyway?</string>
+    <string name="vault_trash_deleted_info">Deleted %1$s</string>
+    <string name="vault_trash_deleted_at">Deleted at</string>
+    <string name="vault_trash_clear_selection">Exit selection</string>
+    <string name="vault_trash_delete_title">Delete permanently</string>
+    <string name="vault_trash_clear">Empty trash</string>
+    <plurals name="vault_trash_selected">
+        <item quantity="one">%d selected</item>
+        <item quantity="other">%d selected</item>
+    </plurals>
+    <plurals name="vault_trash_delete_summary">
+        <item quantity="one">Permanently delete the selected password? This can\'t be undone.</item>
+        <item quantity="other">Permanently delete the %d selected passwords? This can\'t be undone.</item>
+    </plurals>
+    <plurals name="vault_trash_clear_summary">
+        <item quantity="one">Permanently delete the %d password in Trash? This can\'t be undone.</item>
+        <item quantity="other">Permanently delete all %d passwords in Trash? This can\'t be undone.</item>
     </plurals>
     <string name="backup_title">Backup and restore</string>
     <string name="backup_config">Cloud configuration</string>

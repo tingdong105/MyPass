@@ -66,6 +66,7 @@ internal class VaultPassword(
     val website: String?,
     val notes: String?,
     val email: String?,
+    val deletedAt: Long? = null,
 )
 
 /**
@@ -140,7 +141,8 @@ internal interface VaultDao {
      */
     @Query("""
         SELECT b.id, b.name, COUNT(p.id) AS entryCount, NULL AS builtInKey FROM vault_books b
-        LEFT JOIN vault_passwords p ON p.bookId = b.id GROUP BY b.id ORDER BY b.id
+        LEFT JOIN vault_passwords p ON p.bookId = b.id AND p.deletedAt IS NULL
+        GROUP BY b.id ORDER BY b.id
     """)
     suspend fun books(): List<VaultCategory>
 
@@ -148,8 +150,10 @@ internal interface VaultDao {
      * 读取标签和关联条目数。
      */
     @Query("""
-        SELECT t.id, t.name, COUNT(p.passwordId) AS entryCount, NULL AS builtInKey FROM vault_tags t
-        LEFT JOIN vault_password_tags p ON p.tagId = t.id GROUP BY t.id ORDER BY t.id
+        SELECT t.id, t.name, COUNT(p.id) AS entryCount, NULL AS builtInKey FROM vault_tags t
+        LEFT JOIN vault_password_tags pt ON pt.tagId = t.id
+        LEFT JOIN vault_passwords p ON p.id = pt.passwordId AND p.deletedAt IS NULL
+        GROUP BY t.id ORDER BY t.id
     """)
     suspend fun tags(): List<VaultCategory>
 
@@ -158,7 +162,7 @@ internal interface VaultDao {
      */
     @Query("""
         SELECT t.id, t.name, COUNT(p.id) AS entryCount, t.builtInKey FROM vault_types t
-        LEFT JOIN vault_passwords p ON p.typeId = t.id GROUP BY t.id
+        LEFT JOIN vault_passwords p ON p.typeId = t.id AND p.deletedAt IS NULL GROUP BY t.id
         ORDER BY t.builtInKey IS NULL, t.id
     """)
     suspend fun types(): List<VaultCategory>
@@ -176,7 +180,7 @@ internal interface VaultDao {
                     THEN password END AS passwordPreview,
                CASE WHEN :includePasswordLength AND instr(password, char(0)) = 0
                     THEN length(password) END AS passwordLength
-        FROM vault_passwords WHERE bookId = :bookId
+        FROM vault_passwords WHERE bookId = :bookId AND deletedAt IS NULL
     """)
     suspend fun summaries(
         bookId: Long,
@@ -189,7 +193,8 @@ internal interface VaultDao {
      */
     @Query("""
         SELECT t.passwordId, t.tagId FROM vault_password_tags t
-        JOIN vault_passwords p ON t.passwordId = p.id WHERE p.bookId = :bookId
+        JOIN vault_passwords p ON t.passwordId = p.id
+        WHERE p.bookId = :bookId AND p.deletedAt IS NULL
     """)
     suspend fun passwordTags(bookId: Long): List<PasswordTag>
 
@@ -284,18 +289,86 @@ internal interface VaultDao {
     suspend fun deleteType(id: Long)
 
     /**
-     * 删除密码及标签关联。
+     * 将密码移入回收站。
+     * @param id 记录标识
+     * @param deletedAt 删除时间
      */
-    @Query("DELETE FROM vault_passwords WHERE id = :id")
-    suspend fun deletePassword(id: Long)
+    @Query("UPDATE vault_passwords SET deletedAt = :deletedAt WHERE id = :id AND deletedAt IS NULL")
+    suspend fun deletePassword(id: Long, deletedAt: Long)
 
     /**
-     * 批量删除当前本内的密码及标签关联。
+     * 批量将当前本内的密码移入回收站。
      * @param bookId 所属密码本
      * @param ids 待删除的记录标识
+     * @param deletedAt 删除时间
      */
-    @Query("DELETE FROM vault_passwords WHERE bookId = :bookId AND id IN (:ids)")
-    suspend fun deletePasswords(bookId: Long, ids: List<Long>)
+    @Query("UPDATE vault_passwords SET deletedAt = :deletedAt WHERE bookId = :bookId AND id IN (:ids) AND deletedAt IS NULL")
+    suspend fun deletePasswords(bookId: Long, ids: List<Long>, deletedAt: Long)
+
+    /**
+     * 读取全部密码本的回收站记录。
+     */
+    @Query("""
+        SELECT id, platform, typeId, deletedAt
+        FROM vault_passwords
+        WHERE deletedAt IS NOT NULL ORDER BY deletedAt DESC, id DESC
+    """)
+    suspend fun trashed(): List<TrashEntry>
+
+    /**
+     * 读取密码本内参与查重的正常记录。
+     * @param bookId 密码本标识
+     * @param excludeId 编辑时排除的原记录标识
+     * @return 正常记录的查重字段
+     */
+    @Query("""
+        SELECT bookId, platform, account FROM vault_passwords
+        WHERE bookId = :bookId AND deletedAt IS NULL AND (:excludeId IS NULL OR id != :excludeId)
+    """)
+    suspend fun passwordIdentities(bookId: Long, excludeId: Long? = null): List<PasswordIdentity>
+
+    /**
+     * 读取要恢复的记录所需的查重字段。
+     * @param ids 待恢复的记录标识
+     * @return 仍在回收站中的记录身份
+     */
+    @Query("SELECT bookId, platform, account FROM vault_passwords WHERE id IN (:ids) AND deletedAt IS NOT NULL")
+    suspend fun trashedIdentities(ids: List<Long>): List<PasswordIdentity>
+
+    /**
+     * 从回收站恢复一批密码。
+     * @param ids 待恢复的记录标识
+     */
+    @Query("UPDATE vault_passwords SET deletedAt = NULL WHERE id IN (:ids) AND deletedAt IS NOT NULL")
+    suspend fun restorePasswords(ids: List<Long>)
+
+    /**
+     * 永久删除回收站中的一批密码。
+     * @param ids 待删除的记录标识
+     */
+    @Query("DELETE FROM vault_passwords WHERE id IN (:ids) AND deletedAt IS NOT NULL")
+    suspend fun purgePasswords(ids: List<Long>)
+
+    /**
+     * 清理早于指定时间的回收站记录。
+     * @param before 保留截止时间
+     */
+    @Query("DELETE FROM vault_passwords WHERE deletedAt IS NOT NULL AND deletedAt < :before")
+    suspend fun purgeTrash(before: Long)
+
+    /**
+     * 清空全部回收站记录。
+     */
+    @Query("DELETE FROM vault_passwords WHERE deletedAt IS NOT NULL")
+    suspend fun clearTrash()
+
+    /**
+     * 读取指定密码本的回收站条目数。
+     * @param bookId 所属密码本
+     * @return 回收站中的记录数
+     */
+    @Query("SELECT COUNT(*) FROM vault_passwords WHERE bookId = :bookId AND deletedAt IS NOT NULL")
+    suspend fun trashedCount(bookId: Long): Int
 }
 
 /**
@@ -308,7 +381,7 @@ internal interface VaultDao {
         VaultBook::class, VaultTag::class, VaultType::class, VaultPassword::class,
         PasswordTag::class, GeneratedPasswordCopy::class,
     ],
-    version = 5,
+    version = 6,
 )
 internal abstract class VaultDatabase : RoomDatabase() {
     /**

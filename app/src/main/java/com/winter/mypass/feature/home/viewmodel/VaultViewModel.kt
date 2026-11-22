@@ -9,6 +9,7 @@ import com.winter.mypass.feature.home.model.PasswordDraft
 import com.winter.mypass.feature.home.model.PasswordGenerator
 import com.winter.mypass.feature.home.model.PasswordGroup
 import com.winter.mypass.feature.home.model.PasswordPreviewSettings
+import com.winter.mypass.feature.home.model.TrashEntry
 import com.winter.mypass.feature.home.model.VaultClipboard
 import com.winter.mypass.feature.home.model.VaultException
 import com.winter.mypass.feature.home.model.VaultNavigationSettings
@@ -48,7 +49,11 @@ internal sealed interface VaultPage {
      * @author Tingdong
      * @date 2026-11-20
      */
-    data class Detail(val draft: PasswordDraft, val phase: DetailPhase = DetailPhase.Open) : VaultPage
+    data class Detail(
+        val draft: PasswordDraft,
+        val phase: DetailPhase = DetailPhase.Open,
+        val deletedAt: Long? = null,
+    ) : VaultPage
 
     /**
      * 保留原记录和草稿，直到表单完成退场。
@@ -69,6 +74,17 @@ internal sealed interface VaultPage {
      * @date 2026-11-20
      */
     data class GenerationHistory(val entries: List<GeneratedPasswordCopy>? = null) : VaultPage
+
+    /**
+     * 暂存当前回收站已加载的密码。
+     * @author Tingdong
+     * @date 2026-11-22
+     */
+    data class Trash(
+        val entries: List<TrashEntry>? = null,
+        val detail: Detail? = null,
+        val pendingRestore: Set<Long>? = null,
+    ) : VaultPage
 }
 
 /**
@@ -148,7 +164,15 @@ internal data class VaultState(
     val generator: GeneratorState = GeneratorState(),
     val busy: Boolean = false,
     val problem: VaultProblem? = null,
-)
+) {
+    /** 当前详情可能位于密码本或回收站。 */
+    val detail: VaultPage.Detail?
+        get() = when (val visiblePage = page) {
+            is VaultPage.Detail -> visiblePage
+            is VaultPage.Trash -> visiblePage.detail
+            else -> null
+        }
+}
 
 /**
  * 管理密码本界面、串行操作和解锁期间的临时内容。
@@ -372,9 +396,11 @@ internal class VaultViewModel(
      * 开始关闭当前详情 Sheet。
      */
     fun dismissPasswordDetail() {
-        val detail = current.page as? VaultPage.Detail ?: return
-        if (!current.busy && detail.phase == DetailPhase.Open) {
-            mutableState.value = current.copy(page = detail.copy(phase = DetailPhase.Closing), problem = null)
+        val detail = current.detail ?: return
+        val trash = current.page as? VaultPage.Trash
+        if (!current.busy && trash?.pendingRestore == null && detail.phase == DetailPhase.Open) {
+            val closing = detail.copy(phase = DetailPhase.Closing)
+            mutableState.value = current.copy(page = trash?.copy(detail = closing) ?: closing, problem = null)
         }
     }
 
@@ -382,10 +408,10 @@ internal class VaultViewModel(
      * 详情 Sheet 退场后切换到编辑表单或首页。
      */
     fun finishPasswordDetailDismissal() {
-        val detail = current.page as? VaultPage.Detail ?: return
+        val detail = current.detail ?: return
         val next = when (detail.phase) {
             DetailPhase.Open -> return
-            DetailPhase.Closing -> null
+            DetailPhase.Closing -> (current.page as? VaultPage.Trash)?.copy(detail = null)
             DetailPhase.ClosingForEdit -> {
                 val draft = detail.draft.withDefaultType()
                 VaultPage.Editor(draft, draft)
@@ -489,7 +515,10 @@ internal class VaultViewModel(
      * 从二级页面返回对应底栏页面。
      */
     fun closePage() {
-        if (current.busy || (current.page !is VaultPage.Categories && current.page !is VaultPage.GenerationHistory)) return
+        if (current.busy || current.detail != null ||
+            (current.page !is VaultPage.Categories && current.page !is VaultPage.GenerationHistory &&
+                current.page !is VaultPage.Trash)
+        ) return
         mutableState.value = current.copy(page = null, problem = null)
     }
 
@@ -534,6 +563,137 @@ internal class VaultViewModel(
             val remaining = repository.deleteGeneratedPasswordCopies(ids)
             mutableState.value = current.copy(page = VaultPage.GenerationHistory(remaining))
             onDeleted()
+        }
+    }
+
+    /**
+     * 打开回收站并读取已删除的密码。
+     */
+    fun openTrash() {
+        if (current.busy || current.tab != VaultTab.Settings || current.page != null) return
+        mutableState.value = current.copy(page = VaultPage.Trash(), problem = null)
+        loadTrash()
+    }
+
+    /**
+     * 加载或重试读取回收站。
+     */
+    fun loadTrash() {
+        val page = current.page as? VaultPage.Trash ?: return
+        if (page.detail != null || page.pendingRestore != null) return
+        val book = current.snapshot?.bookId ?: return
+        perform {
+            val trash = repository.trash(book, current.passwordPreview)
+            mutableState.value = current.copy(snapshot = trash.snapshot, page = VaultPage.Trash(trash.entries))
+        }
+    }
+
+    /**
+     * 按需读取已删除记录的完整详情。
+     * @param id 回收站记录标识
+     */
+    fun openTrashDetail(id: Long) {
+        val page = current.page as? VaultPage.Trash ?: return
+        if (page.detail != null || page.pendingRestore != null) return
+        val entry = page.entries?.firstOrNull { it.id == id } ?: return
+        perform {
+            val draft = repository.detail(id, trashed = true)
+            val detail = VaultPage.Detail(draft, deletedAt = entry.deletedAt)
+            mutableState.value = current.copy(page = page.copy(detail = detail))
+        }
+    }
+
+    /**
+     * 恢复选中的回收站记录并刷新列表。
+     * @param ids 选中的记录标识
+     * @param onRestored 恢复提交后的回调
+     */
+    fun restoreFromTrash(ids: Set<Long>, onRestored: () -> Unit) {
+        val page = current.page as? VaultPage.Trash ?: return
+        if (page.pendingRestore != null) return
+        restoreTrash(page, ids, allowDuplicate = false, onRestored = onRestored)
+    }
+
+    /**
+     * 按确认时保存的选择恢复记录。
+     * @param onRestored 恢复提交后的回调
+     */
+    fun confirmTrashRestore(onRestored: () -> Unit) {
+        val page = current.page as? VaultPage.Trash ?: return
+        val ids = page.pendingRestore ?: return
+        restoreTrash(page, ids, allowDuplicate = true, onRestored = onRestored)
+    }
+
+    /**
+     * 关闭重复记录确认并保留当前选择和详情。
+     */
+    fun dismissTrashRestore() {
+        val page = current.page as? VaultPage.Trash ?: return
+        if (current.busy || page.pendingRestore == null) return
+        mutableState.value = current.copy(page = page.copy(pendingRestore = null))
+    }
+
+    /**
+     * 在恢复冲突时保存待确认的选择，成功后更新列表。
+     * @param page 当前回收站页面
+     * @param ids 待恢复的记录标识
+     * @param allowDuplicate 是否已确认保留重复记录
+     * @param onRestored 恢复提交后的回调
+     */
+    private fun restoreTrash(
+        page: VaultPage.Trash,
+        ids: Set<Long>,
+        allowDuplicate: Boolean,
+        onRestored: () -> Unit,
+    ) {
+        val detail = page.detail
+        if (ids.isEmpty() || (detail != null &&
+                (detail.phase != DetailPhase.Open || ids.singleOrNull() != detail.draft.id))
+        ) return
+        val book = current.snapshot?.bookId ?: return
+        perform {
+            if (allowDuplicate) mutableState.value = current.copy(page = page.copy(pendingRestore = null))
+            val trash = try {
+                repository.restorePasswords(ids, book, current.passwordPreview, allowDuplicate)
+            } catch (failure: VaultException) {
+                if (allowDuplicate || failure.problem != VaultProblem.DuplicatePassword) throw failure
+                mutableState.value = current.copy(page = page.copy(pendingRestore = ids.toSet()))
+                return@perform
+            }
+            mutableState.value = current.copy(
+                snapshot = trash.snapshot,
+                page = VaultPage.Trash(trash.entries, detail?.copy(phase = DetailPhase.Closing)),
+            )
+            onRestored()
+        }
+    }
+
+    /**
+     * 永久删除选中的回收站记录并刷新列表。
+     * @param ids 选中的记录标识
+     * @param onDeleted 删除提交后的回调
+     */
+    fun deleteFromTrash(ids: Set<Long>, onDeleted: () -> Unit) {
+        val page = current.page as? VaultPage.Trash ?: return
+        if (page.detail != null || page.pendingRestore != null || ids.isEmpty()) return
+        val book = current.snapshot?.bookId ?: return
+        perform {
+            val trash = repository.purgePasswords(ids, book, current.passwordPreview)
+            mutableState.value = current.copy(snapshot = trash.snapshot, page = VaultPage.Trash(trash.entries))
+            onDeleted()
+        }
+    }
+
+    /**
+     * 清空回收站并刷新列表。
+     */
+    fun emptyTrash() {
+        val page = current.page as? VaultPage.Trash ?: return
+        if (page.detail != null || page.pendingRestore != null) return
+        val book = current.snapshot?.bookId ?: return
+        perform {
+            val trash = repository.clearTrash(book, current.passwordPreview)
+            mutableState.value = current.copy(snapshot = trash.snapshot, page = VaultPage.Trash(trash.entries))
         }
     }
 
@@ -587,7 +747,8 @@ internal class VaultViewModel(
      * @param onCopied 剪贴板写入成功后的可选回调
      */
     fun copyText(value: String, sensitive: Boolean, onCopied: (() -> Unit)?) {
-        if ((current.page as? VaultPage.Detail)?.phase != DetailPhase.Open) return
+        if (current.detail?.phase != DetailPhase.Open) return
+        if ((current.page as? VaultPage.Trash)?.pendingRestore != null) return
         perform {
             clipboard.copy(value, sensitive)
             onCopied?.invoke()
