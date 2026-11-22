@@ -16,6 +16,7 @@ internal class VaultRepository(context: Context, private val defaultBookName: St
     private val storage = RoomUtils(
         context, VaultDatabase::class.java, DatabaseName,
         VaultMigration1To2, VaultMigration2To3, VaultMigration3To4, VaultMigration4To5, VaultMigration5To6,
+        VaultMigration6To7,
     )
 
     /**
@@ -376,7 +377,9 @@ internal class VaultRepository(context: Context, private val defaultBookName: St
             }
             val nextBook = when (kind) {
                 CategoryKind.Book -> if (id == null) {
-                    dao.insertBook(VaultBook(name = name, createdAt = System.currentTimeMillis()))
+                    dao.insertBook(VaultBook(
+                        name = name, createdAt = System.currentTimeMillis(), sortOrder = dao.nextBookOrder(),
+                    ))
                 } else {
                     dao.renameBook(id, name)
                     bookId
@@ -391,6 +394,25 @@ internal class VaultRepository(context: Context, private val defaultBookName: St
                 }
             }
             dao.snapshot(nextBook, preview)
+        }
+
+    /**
+     * 在同一事务内保存完整的密码本顺序。
+     * @param ids 按显示位置排列的全部密码本标识
+     * @param bookId 当前选中的密码本
+     * @param preview 列表密码预览设置
+     * @return 保留当前选择的最新快照
+     * @throws VaultException 标识重复或密码本已变动
+     */
+    suspend fun reorderBooks(ids: List<Long>, bookId: Long, preview: PasswordPreviewSettings): VaultSnapshot =
+        storage.transaction {
+            val dao = vaultDao()
+            val books = dao.books()
+            if (ids.size != books.size || ids.toSet() != books.map { it.id }.toSet()) {
+                throw VaultException(VaultProblem.Missing)
+            }
+            ids.forEachIndexed { index, id -> dao.updateBookOrder(id, index.toLong()) }
+            dao.snapshot(bookId, preview)
         }
 
     /**

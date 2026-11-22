@@ -77,6 +77,18 @@ internal val VaultMigration5To6 = object : Migration(5, 6) {
     }
 }
 
+/** 为密码本增加可持久化的显示顺序。 */
+internal val VaultMigration6To7 = object : Migration(6, 7) {
+    /**
+     * 新增顺序列，按旧版主键顺序初始化。
+     * @param db 当前加密数据库
+     */
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE vault_books ADD COLUMN sortOrder INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("UPDATE vault_books SET sortOrder = id")
+    }
+}
+
 /**
  * 将旧版 entries 结构复制到 v2 表，先移除旧关联表再移除其父表。
  * @receiver 迁移事务中的数据库

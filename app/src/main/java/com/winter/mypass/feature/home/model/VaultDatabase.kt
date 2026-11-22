@@ -14,7 +14,7 @@ import androidx.room.Update
 import kotlinx.serialization.Serializable
 
 /**
- * 密码本及其创建顺序。
+ * 密码本及其显示顺序。
  */
 @Entity(tableName = "vault_books", indices = [Index(value = ["name"], unique = true)])
 @Serializable
@@ -22,6 +22,7 @@ internal data class VaultBook(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
     @ColumnInfo(defaultValue = "0") val createdAt: Long,
+    @ColumnInfo(defaultValue = "0") val sortOrder: Long = 0,
 )
 
 /**
@@ -142,9 +143,24 @@ internal interface VaultDao {
     @Query("""
         SELECT b.id, b.name, COUNT(p.id) AS entryCount, NULL AS builtInKey FROM vault_books b
         LEFT JOIN vault_passwords p ON p.bookId = b.id AND p.deletedAt IS NULL
-        GROUP BY b.id ORDER BY b.id
+        GROUP BY b.id ORDER BY b.sortOrder, b.id
     """)
     suspend fun books(): List<VaultCategory>
+
+    /**
+     * 更新密码本的显示位置。
+     * @param id 密码本标识
+     * @param sortOrder 从零开始的顺序
+     */
+    @Query("UPDATE vault_books SET sortOrder = :sortOrder WHERE id = :id")
+    suspend fun updateBookOrder(id: Long, sortOrder: Long)
+
+    /**
+     * 读取新密码本的末尾位置。
+     * @return 当前最大顺序之后的位置
+     */
+    @Query("SELECT COALESCE(MAX(sortOrder), -1) + 1 FROM vault_books")
+    suspend fun nextBookOrder(): Long
 
     /**
      * 读取标签和关联条目数。
@@ -404,7 +420,7 @@ internal interface VaultDao {
         VaultBook::class, VaultTag::class, VaultType::class, VaultPassword::class,
         PasswordTag::class, GeneratedPasswordCopy::class,
     ],
-    version = 6,
+    version = 7,
 )
 internal abstract class VaultDatabase : RoomDatabase() {
     /**

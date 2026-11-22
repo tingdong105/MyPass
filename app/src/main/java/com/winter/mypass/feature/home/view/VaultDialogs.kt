@@ -9,6 +9,7 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,6 +17,7 @@ import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -30,6 +32,7 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -82,7 +85,6 @@ import top.yukonga.miuix.kmp.basic.HorizontalDivider
 import top.yukonga.miuix.kmp.basic.Icon
 import top.yukonga.miuix.kmp.basic.IconButton
 import top.yukonga.miuix.kmp.basic.ListPopupColumn
-import top.yukonga.miuix.kmp.basic.ListPopupDefaults
 import top.yukonga.miuix.kmp.basic.PopupPositionProvider
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
@@ -463,6 +465,7 @@ internal fun PasswordMoveDialog(
  * @param onClearProblem 清理历史错误
  * @param onSave 新建或重命名
  * @param onDelete 删除指定项
+ * @param onReorder 保存密码本顺序
  */
 @Composable
 internal fun CategoryScreen(
@@ -475,25 +478,37 @@ internal fun CategoryScreen(
     onClearProblem: () -> Unit,
     onSave: (Long?, String, () -> Unit) -> Unit,
     onDelete: (Long) -> Unit,
+    onReorder: (List<Long>) -> Unit,
 ) {
     var draft by remember(kind) { mutableStateOf(CategoryDraft()) }
     var editing by remember(kind) { mutableStateOf(false) }
     var target by remember(kind) { mutableStateOf<VaultCategory?>(null) }
     var deleting by remember(kind) { mutableStateOf(false) }
+    var reordering by remember(kind) { mutableStateOf(false) }
+    val rename: (VaultCategory) -> Unit = { item ->
+        draft = CategoryDraft(item.id, item.name)
+        onClearProblem()
+        editing = true
+    }
+    val delete: (VaultCategory) -> Unit = { item ->
+        target = item
+        onClearProblem()
+        deleting = true
+    }
     val closeEdit = {
         if (!busy) {
             editing = false
             onClearProblem()
         }
     }
-    BackHandler(active, onBack = onBack)
+    BackHandler(active) { if (!busy && !reordering) onBack() }
     VaultFrame(
         title = stringResource(categoryTitle(kind)),
-        navigationIcon = { VaultIcon(MiuixIcons.Back, R.string.lock_back, enabled = !busy, iconSize = VaultLayout.HeaderIconSize, onClick = onBack) },
+        navigationIcon = { VaultIcon(MiuixIcons.Back, R.string.lock_back, enabled = !busy && !reordering, iconSize = VaultLayout.HeaderIconSize, onClick = onBack) },
         floatingActionButton = {
             FloatingActionButton(
                 onClick = {
-                    if (!busy) {
+                    if (!busy && !reordering) {
                         draft = CategoryDraft()
                         onClearProblem()
                         editing = true
@@ -508,7 +523,30 @@ internal fun CategoryScreen(
             }
         },
     ) { modifier ->
-        VaultColumn(modifier, horizontalPadding = Theme.spacing.medium) {
+        if (kind == CategoryKind.Book) {
+            Box(modifier, contentAlignment = Alignment.TopCenter) {
+                Column(
+                    Modifier.widthIn(max = VaultLayout.PaneWidth).fillMaxSize()
+                        .padding(horizontal = Theme.spacing.small),
+                ) {
+                    if (!editing && problem != null) Box(
+                        Modifier.padding(top = Theme.spacing.medium).padding(horizontal = Theme.spacing.small),
+                    ) {
+                        VaultErrorText(problem)
+                    }
+                    ReorderableBookList(
+                        categories = categories,
+                        busy = busy,
+                        enabled = active && !busy && !editing && !deleting,
+                        modifier = Modifier.fillMaxWidth().weight(1f),
+                        onInteractionChanged = { reordering = it },
+                        onReorder = onReorder,
+                        onRename = rename,
+                        onDelete = delete,
+                    )
+                }
+            }
+        } else VaultColumn(modifier, horizontalPadding = Theme.spacing.medium) {
             if (!editing) VaultErrorText(problem)
             if (categories.isEmpty()) {
                 Text(
@@ -520,16 +558,8 @@ internal fun CategoryScreen(
                     if (index > 0) VaultRowDivider()
                     CategoryRow(
                         kind, item, !busy,
-                        onRename = {
-                            draft = CategoryDraft(item.id, item.name)
-                            onClearProblem()
-                            editing = true
-                        },
-                        onDelete = {
-                            target = item
-                            onClearProblem()
-                            deleting = true
-                        },
+                        onRename = { rename(item) },
+                        onDelete = { delete(item) },
                     )
                 }
             }
@@ -604,16 +634,27 @@ internal fun CategoryScreen(
  * @param enabled 是否接受点击
  * @param onRename 更改名称
  * @param onDelete 打开删除确认
+ * @param actionModifier 更多按钮的定位与手势修饰符
+ * @param dragging 是否为拖动浮层中的按钮
  */
 @Composable
-private fun CategoryRow(
+internal fun CategoryRow(
     kind: CategoryKind,
     item: VaultCategory,
     enabled: Boolean,
     onRename: () -> Unit,
     onDelete: () -> Unit,
+    actionModifier: Modifier = Modifier,
+    dragging: Boolean = false,
 ) {
     var menu by remember(item.id) { mutableStateOf(false) }
+    var pendingAction by remember(item.id) { mutableStateOf<(() -> Unit)?>(null) }
+    LaunchedEffect(enabled) {
+        if (!enabled) {
+            menu = false
+            pendingAction = null
+        }
+    }
     val icon = when (kind) {
         CategoryKind.Book -> MiuixIcons.Folder
         CategoryKind.Tag -> MiuixIcons.Pin
@@ -627,30 +668,67 @@ private fun CategoryRow(
             else Icon(icon, null, Modifier.size(22.dp))
         },
         endActions = {
-            if (!item.builtIn) Box {
-                VaultIcon(MiuixIcons.More, R.string.vault_category_actions, enabled) { menu = true }
-                OverlayListPopup(
-                    show = menu,
-                    alignment = PopupPositionProvider.Align.End,
-                    popupPositionProvider = ListPopupDefaults.dropdownPositionProvider(
-                        horizontalMargin = Theme.spacing.small,
-                    ),
-                    onDismissRequest = { menu = false },
+            if (!item.builtIn) Box(actionModifier) {
+                IconButton(
+                    onClick = { menu = true }, enabled = enabled, holdDownState = menu,
+                    minWidth = Theme.sizes.minimumTouchTarget, minHeight = Theme.sizes.minimumTouchTarget,
                 ) {
-                    ListPopupColumn {
-                        BasicComponent(title = stringResource(R.string.vault_rename), onClick = {
+                    Icon(
+                        MiuixIcons.More, stringResource(R.string.vault_category_actions), Modifier.size(22.dp),
+                        tint = if (enabled || dragging) MiuixTheme.colorScheme.onSurface
+                        else MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    )
+                }
+                OverlayListPopup(
+                    show = menu && enabled,
+                    alignment = PopupPositionProvider.Align.End,
+                    minWidth = 0.dp,
+                    onDismissRequest = { menu = false },
+                    onDismissFinished = {
+                        val action = pendingAction
+                        pendingAction = null
+                        if (enabled) action?.invoke()
+                    },
+                ) {
+                    Column(
+                        Modifier.widthIn(min = 168.dp, max = 240.dp).width(IntrinsicSize.Max)
+                            .verticalScroll(rememberScrollState()).padding(vertical = Theme.spacing.small / 2),
+                    ) {
+                        CategoryMenuAction(stringResource(R.string.vault_rename), enabled && menu) {
+                            pendingAction = onRename
                             menu = false
-                            onRename()
-                        })
-                        BasicComponent(title = stringResource(R.string.vault_delete), onClick = {
+                        }
+                        CategoryMenuAction(stringResource(R.string.vault_delete), enabled && menu) {
+                            pendingAction = onDelete
                             menu = false
-                            onDelete()
-                        })
+                        }
                     }
                 }
             }
         },
     )
+}
+
+/**
+ * 使用下拉菜单字号和触控高度显示分类操作。
+ * @param label 操作名称
+ * @param enabled 是否可执行操作
+ * @param onClick 点击后关闭菜单并执行操作
+ */
+@Composable
+private fun CategoryMenuAction(label: String, enabled: Boolean, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = Theme.sizes.minimumTouchTarget + Theme.spacing.small)
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .padding(horizontal = Theme.spacing.medium, vertical = Theme.spacing.medium),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            label, fontSize = MiuixTheme.textStyles.body1.fontSize, fontWeight = FontWeight.Medium,
+            color = DropdownDefaults.dropdownColors().contentColor,
+            maxLines = 1, overflow = TextOverflow.Ellipsis,
+        )
+    }
 }
 
 /**
@@ -1093,7 +1171,16 @@ internal fun previewSnapshot(preview: PasswordPreviewSettings = PasswordPreviewS
 @Composable
 internal fun CategoryPreview() {
     MyPassTheme {
-        CategoryScreen(CategoryKind.Type, previewSnapshot().types, false, null, true, {}, {}, { _, _, _ -> }, {})
+        CategoryScreen(CategoryKind.Type, previewSnapshot().types, false, null, true, {}, {}, { _, _, _ -> }, {}, {})
+    }
+}
+
+/** 预览密码本排序管理页。 */
+@VaultPreviews
+@Composable
+internal fun BookCategoryPreview() {
+    MyPassTheme {
+        CategoryScreen(CategoryKind.Book, previewSnapshot().books, false, null, true, {}, {}, { _, _, _ -> }, {}, {})
     }
 }
 

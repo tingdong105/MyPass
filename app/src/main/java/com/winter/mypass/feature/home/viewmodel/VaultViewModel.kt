@@ -834,6 +834,20 @@ internal class VaultViewModel(
     }
 
     /**
+     * 保存管理页拖动后的密码本顺序。
+     * @param ids 按显示顺序排列的全部密码本标识
+     */
+    fun reorderBooks(ids: List<Long>) {
+        if ((current.page as? VaultPage.Categories)?.kind != CategoryKind.Book) return
+        val snapshot = current.snapshot ?: return
+        if (ids == snapshot.books.map { it.id }) return
+        perform {
+            val updated = repository.reorderBooks(ids, snapshot.bookId, current.passwordPreview)
+            mutableState.value = current.copy(snapshot = updated)
+        }
+    }
+
+    /**
      * 删除当前分类下指定的条目。
      * @param id 分类标识
      */

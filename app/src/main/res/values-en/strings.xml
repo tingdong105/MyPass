@@ -48,6 +48,8 @@
     <string name="vault_my_books">My vaults</string>
     <string name="vault_dark_mode">Dark mode</string>
     <string name="vault_manage_books">Manage vaults</string>
+    <string name="vault_book_move_up">Move vault up</string>
+    <string name="vault_book_move_down">Move vault down</string>
     <string name="vault_tags">Tags</string>
     <string name="vault_type">Type</string>
     <string name="vault_types">Types</string>

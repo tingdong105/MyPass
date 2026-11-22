@@ -23,6 +23,7 @@ internal data class VaultBackup(
             require(it.size == values.size && it.all { id -> id > 0 && id < Long.MAX_VALUE })
         }
         require(createdAt >= 0 && books.isNotEmpty())
+        require(books.all { it.sortOrder >= 0 && it.sortOrder < Long.MAX_VALUE })
         val bookIds = ids(books.map { it.id })
         val tagIds = ids(tags.map { it.id })
         val typeIds = ids(types.map { it.id })

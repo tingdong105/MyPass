@@ -47,6 +47,8 @@
     <string name="vault_my_books">我的密码本</string>
     <string name="vault_dark_mode">暗色模式</string>
     <string name="vault_manage_books">管理密码本</string>
+    <string name="vault_book_move_up">上移密码本</string>
+    <string name="vault_book_move_down">下移密码本</string>
     <string name="vault_tags">标签</string>
     <string name="vault_type">类型</string>
     <string name="vault_types">类型</string>

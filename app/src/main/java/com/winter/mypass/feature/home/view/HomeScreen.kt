@@ -233,6 +233,7 @@ internal fun VaultScreen(model: VaultViewModel, onBackup: () -> Unit, onChangeCr
                 CategoryScreen(
                     page.kind, snapshot.categories(page.kind), screen.busy, screen.problem, active,
                     model::closePage, model::clearProblem, model::saveCategory, model::deleteCategory,
+                    model::reorderBooks,
                 )
             } else if (page is VaultPage.GenerationHistory) {
                 GeneratorHistoryScreen(
